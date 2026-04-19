@@ -115,6 +115,10 @@ export async function onRequest(context) {
     return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
   }
 
+  if (typeof AI_HARDWARE_TOOL === 'undefined') {
+    return jsonResponse({ success: false, error: 'KV 存储未绑定，请在 EdgeOne Pages 控制台绑定 KV 命名空间后重新部署' }, 503);
+  }
+
   try {
     const apiKey = await getApiKey();
     if (!apiKey) {

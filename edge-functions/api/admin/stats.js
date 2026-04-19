@@ -39,6 +39,10 @@ export async function onRequest(context) {
     return new Response(null, { status: 204, headers: getCorsHeaders() });
   }
 
+  if (typeof AI_HARDWARE_TOOL === 'undefined') {
+    return jsonResponse({ success: false, error: 'KV 存储未绑定，请在 EdgeOne Pages 控制台绑定 KV 命名空间后重新部署' }, 503);
+  }
+
   const authenticated = await verifyToken(context.request);
   if (!authenticated) {
     return jsonResponse({ success: false, error: '未授权，请重新登录' }, 401);
