@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>硬件分析师 - 芯片数据手册解析工具</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">硬件分析师</span>
+        <span class="logo-sub">Hardware Data Sheet Analyzer</span>
+      </div>
+      <nav class="nav">
+        <a href="/" class="nav-link active">分析工具</a>
+        <a href="/admin.html" class="nav-link">管理后台</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+    <section id="upload-section" class="section">
+      <div class="section-header">
+        <h2>上传数据手册</h2>
+        <p>上传硬件芯片数据手册 PDF，自动解析生成驱动代码</p>
+      </div>
+      <div class="upload-card">
+        <div class="form-group">
+          <label for="pdf-file">数据手册 PDF</label>
+          <div class="file-upload" id="file-drop-zone">
+            <input type="file" id="pdf-file" accept=".pdf" hidden>
+            <div class="file-upload-content">
+              <span class="file-icon">📄</span>
+              <span class="file-text" id="file-name-display">点击或拖拽上传 PDF 文件</span>
+              <span class="file-hint">支持 .pdf 格式</span>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mcu-input">目标 MCU</label>
+            <input type="text" id="mcu-input" placeholder="例如：STM32F103C8T6" value="STM32F103C8T6">
+          </div>
+          <div class="form-group">
+            <label for="language-select">编程语言</label>
+            <select id="language-select">
+              <option value="C">C 语言</option>
+              <option value="Arduino">Arduino</option>
+              <option value="STM32 HAL">STM32 HAL</option>
+              <option value="Python">Python (MicroPython/CircuitPython)</option>
+              <option value="ESP-IDF">ESP-IDF</option>
+              <option value="Rust">Rust (embedded)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-large" id="analyze-btn" disabled>
+          <span class="btn-text">开始解析</span>
+          <span class="btn-loading" style="display:none;">
+            <span class="spinner"></span> 解析中...
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section id="progress-section" class="section" style="display:none;">
+      <div class="progress-card">
+        <div class="progress-steps">
+          <div class="step" id="step-extract">
+            <div class="step-icon">1</div>
+            <div class="step-text">提取 PDF 文本</div>
+            <div class="step-status" id="step-extract-status"></div>
+          </div>
+          <div class="step-line"></div>
+          <div class="step" id="step-analyze">
+            <div class="step-icon">2</div>
+            <div class="step-text">AI 分析芯片数据</div>
+            <div class="step-status" id="step-analyze-status"></div>
+          </div>
+          <div class="step-line"></div>
+          <div class="step" id="step-generate">
+            <div class="step-icon">3</div>
+            <div class="step-text">生成驱动代码</div>
+            <div class="step-status" id="step-generate-status"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="result-section" class="section" style="display:none;">
+      <div class="section-header">
+        <h2>分析结果</h2>
+        <button class="btn btn-secondary" id="new-analysis-btn">重新分析</button>
+      </div>
+
+      <div class="result-cards">
+        <div class="card" id="card-chip-info">
+          <div class="card-header">
+            <span class="card-icon">🔧</span>
+            <h3>芯片基本信息</h3>
+          </div>
+          <div class="card-body" id="chip-info-body"></div>
+        </div>
+
+        <div class="card" id="card-principle">
+          <div class="card-header">
+            <span class="card-icon">📖</span>
+            <h3>工作原理</h3>
+          </div>
+          <div class="card-body" id="principle-body"></div>
+        </div>
+
+        <div class="card card-code" id="card-driver1">
+          <div class="card-header">
+            <span class="card-icon">⚙️</span>
+            <h3>驱动函数 1</h3>
+            <button class="btn-copy" data-target="driver1-code">复制</button>
+          </div>
+          <div class="card-subheader" id="driver1-desc"></div>
+          <div class="card-body">
+            <pre><code id="driver1-code"></code></pre>
+          </div>
+        </div>
+
+        <div class="card card-code" id="card-driver2">
+          <div class="card-header">
+            <span class="card-icon">⚙️</span>
+            <h3>驱动函数 2</h3>
+            <button class="btn-copy" data-target="driver2-code">复制</button>
+          </div>
+          <div class="card-subheader" id="driver2-desc"></div>
+          <div class="card-body">
+            <pre><code id="driver2-code"></code></pre>
+          </div>
+        </div>
+
+        <div class="card card-code" id="card-init">
+          <div class="card-header">
+            <span class="card-icon">🚀</span>
+            <h3>初始化代码</h3>
+            <button class="btn-copy" data-target="init-code">复制</button>
+          </div>
+          <div class="card-subheader" id="init-desc"></div>
+          <div class="card-body">
+            <pre><code id="init-code"></code></pre>
+          </div>
+        </div>
+
+        <div class="card" id="card-notes">
+          <div class="card-header">
+            <span class="card-icon">⚠️</span>
+            <h3>使用注意事项</h3>
+          </div>
+          <div class="card-body" id="notes-body"></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="error-section" class="section" style="display:none;">
+      <div class="error-card">
+        <span class="error-icon">❌</span>
+        <h3>分析失败</h3>
+        <p id="error-message"></p>
+        <button class="btn btn-secondary" id="retry-btn">重试</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>硬件分析师 &copy; 2026 | 基于 EdgeOne Pages + OpenRouter 构建</p>
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

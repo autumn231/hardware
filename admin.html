@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理后台 - 硬件分析师</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">硬件分析师</span>
+        <span class="logo-sub">Admin Panel</span>
+      </div>
+      <nav class="nav">
+        <a href="/" class="nav-link">分析工具</a>
+        <a href="/admin.html" class="nav-link active">管理后台</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+    <section id="login-section" class="section">
+      <div class="login-card">
+        <div class="login-header">
+          <span class="login-icon">🔐</span>
+          <h2>管理员登录</h2>
+          <p>默认密码：admin123</p>
+        </div>
+        <div class="form-group">
+          <label for="admin-password">管理员密码</label>
+          <input type="password" id="admin-password" placeholder="请输入管理员密码">
+        </div>
+        <button class="btn btn-primary btn-block" id="login-btn">登录</button>
+        <p class="login-error" id="login-error" style="display:none;"></p>
+      </div>
+    </section>
+
+    <section id="admin-section" class="section" style="display:none;">
+      <div class="section-header">
+        <h2>管理后台</h2>
+        <button class="btn btn-secondary" id="logout-btn">退出登录</button>
+      </div>
+
+      <div class="admin-grid">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📊</span>
+            <h3>调用统计</h3>
+          </div>
+          <div class="card-body">
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-label">今日调用</span>
+                <span class="stat-value" id="stat-today">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">每日上限</span>
+                <span class="stat-value" id="stat-limit">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">累计调用</span>
+                <span class="stat-value" id="stat-total">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">统计日期</span>
+                <span class="stat-value stat-date" id="stat-date">-</span>
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary btn-sm" id="refresh-stats-btn">刷新统计</button>
+              <button class="btn btn-warning btn-sm" id="reset-today-btn">重置今日</button>
+              <button class="btn btn-danger btn-sm" id="reset-all-btn">重置全部</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔑</span>
+            <h3>API 配置</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="config-api-key">OpenRouter API Key</label>
+              <input type="password" id="config-api-key" placeholder="sk-or-...">
+              <span class="form-hint" id="api-key-hint">当前未设置</span>
+            </div>
+            <div class="form-group">
+              <label for="config-model">使用模型</label>
+              <input type="text" id="config-model" placeholder="openai/gpt-4o">
+              <span class="form-hint">常用：openai/gpt-4o, google/gemini-2.0-flash-001, deepseek/deepseek-chat</span>
+            </div>
+            <div class="form-group">
+              <label for="config-daily-limit">每日调用上限</label>
+              <input type="number" id="config-daily-limit" min="1" max="10000" placeholder="100">
+            </div>
+            <button class="btn btn-primary btn-block" id="save-config-btn">保存配置</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔒</span>
+            <h3>修改密码</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="new-password">新密码</label>
+              <input type="password" id="new-password" placeholder="输入新密码">
+            </div>
+            <div class="form-group">
+              <label for="confirm-password">确认密码</label>
+              <input type="password" id="confirm-password" placeholder="再次输入新密码">
+            </div>
+            <button class="btn btn-primary btn-block" id="change-password-btn">修改密码</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>硬件分析师 &copy; 2026 | 基于 EdgeOne Pages + OpenRouter 构建</p>
+  </footer>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
