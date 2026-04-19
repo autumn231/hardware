@@ -18,6 +18,7 @@
       <nav class="nav">
         <a href="/" class="nav-link active">分析工具</a>
         <a href="/admin.html" class="nav-link">管理后台</a>
+        <a href="javascript:void(0)" class="nav-link" id="contact-btn">联系我们</a>
       </nav>
     </div>
   </header>
@@ -77,7 +78,7 @@
           <div class="step-line"></div>
           <div class="step" id="step-analyze">
             <div class="step-icon">2</div>
-            <div class="step-text">AI 分析芯片数据</div>
+            <div class="step-text">AI 分析硬件数据</div>
             <div class="step-status" id="step-analyze-status"></div>
           </div>
           <div class="step-line"></div>
@@ -172,6 +173,26 @@
   <footer class="footer">
     <p>硬件分析师 &copy; 2026 | 基于 EdgeOne Pages + OpenRouter 构建</p>
   </footer>
+
+  <div id="contact-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>联系我们</h3>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="contact-item">
+          <span class="contact-icon">💬</span>
+          <div class="contact-info">
+            <span class="contact-label">QQ</span>
+            <span class="contact-value" id="qq-value">2459710736</span>
+          </div>
+          <button class="btn btn-primary btn-sm" id="copy-qq-btn">复制</button>
+        </div>
+        <p class="contact-note">如有问题、建议或合作意向，欢迎通过 QQ 联系我们。</p>
+      </div>
+    </div>
+  </div>
 
   <script src="/js/app.js"></script>
 </body>

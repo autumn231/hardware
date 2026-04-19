@@ -72,6 +72,36 @@
     });
   });
 
+  const contactBtn = $('#contact-btn');
+  const contactModal = $('#contact-modal');
+  const modalCloseBtn = $('#modal-close-btn');
+  const copyQqBtn = $('#copy-qq-btn');
+
+  if (contactBtn && contactModal) {
+    contactBtn.addEventListener('click', () => {
+      contactModal.style.display = '';
+    });
+    modalCloseBtn.addEventListener('click', () => {
+      contactModal.style.display = 'none';
+    });
+    contactModal.addEventListener('click', (e) => {
+      if (e.target === contactModal) {
+        contactModal.style.display = 'none';
+      }
+    });
+  }
+
+  if (copyQqBtn) {
+    copyQqBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText($('#qq-value').textContent).then(() => {
+        copyQqBtn.textContent = '已复制';
+        setTimeout(() => {
+          copyQqBtn.textContent = '复制';
+        }, 2000);
+      });
+    });
+  }
+
   async function startAnalysis() {
     if (!fileInput.files.length) {
       showToast('请先上传 PDF 文件', 'error');
