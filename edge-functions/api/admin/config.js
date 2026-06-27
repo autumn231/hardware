@@ -53,7 +53,7 @@ export async function onRequest(context) {
         providerConfigs[p] = {
           api_key_set: !!key,
           api_key_masked: key ? key.substring(0, 6) + '****' + key.substring(key.length - 4) : '',
-          model: m || (p === 'deepseek' ? 'deepseek-chat' : 'openai/gpt-4o'),
+          model: m || (p === 'deepseek' ? 'deepseek-v4-flash' : 'openai/gpt-4o'),
         };
       }
 

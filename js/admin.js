@@ -147,9 +147,9 @@
     const hint = $('#model-hint');
     if (!hint) return;
     if (provider === 'deepseek') {
-      hint.textContent = 'DeepSeek 常用：deepseek-chat, deepseek-reasoner';
+      hint.textContent = 'DeepSeek 官方：deepseek-v4-flash（非思考）, deepseek-v4-pro（思考）; 旧版 deepseek-chat / deepseek-reasoner 将于 2026/07/24 弃用';
     } else {
-      hint.textContent = 'OpenRouter 常用：openai/gpt-4o, google/gemini-2.0-flash-001, deepseek/deepseek-chat';
+      hint.textContent = 'OpenRouter 常用：openai/gpt-4o, google/gemini-2.0-flash-001, deepseek/deepseek-v4-flash';
     }
   }
 

@@ -39,7 +39,7 @@ async function getModel() {
   const provider = await getProvider();
   const model = await AI_HARDWARE_TOOL.get(`model_${provider}`);
   if (!model) {
-    return provider === 'deepseek' ? 'deepseek-chat' : 'openai/gpt-4o';
+    return provider === 'deepseek' ? 'deepseek-v4-flash' : 'openai/gpt-4o';
   }
   return model;
 }
@@ -172,8 +172,9 @@ export async function onRequest(context) {
         stream: false,
       };
 
-      // DeepSeek Reasoner (R1) 不支持 temperature 和 top_p 参数
-      if (model !== 'deepseek-reasoner') {
+      // DeepSeek V4 Pro / 原 Reasoner 思考模式不支持 temperature/top_p/max_tokens
+      const thinkingModels = ['deepseek-v4-pro', 'deepseek-reasoner'];
+      if (!thinkingModels.includes(model)) {
         requestBody.temperature = 0.3;
         requestBody.max_tokens = 4096;
       }

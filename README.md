@@ -71,7 +71,7 @@ hardware/
      - DeepSeek Key：[platform.deepseek.com](https://platform.deepseek.com/api_keys)
    - **使用模型**：
      - OpenRouter 推荐 `openai/gpt-4o`、`google/gemini-2.0-flash-001`
-     - DeepSeek 推荐 `deepseek-chat`、`deepseek-reasoner`
+     - DeepSeek 官方推荐 `deepseek-v4-flash`（非思考）、`deepseek-v4-pro`（思考）；旧版 `deepseek-chat` / `deepseek-reasoner` 将于 2026/07/24 弃用
    - **每日调用上限**：默认 100 次
    
    > 不同服务商的 API Key 和模型独立存储，切换服务商时不会相互覆盖。
