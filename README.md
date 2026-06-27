@@ -65,18 +65,12 @@ hardware/
 1. 访问部署地址的 `/admin.html`
 2. 默认密码：`admin123`（建议首次登录后修改）
 3. 在「API 配置」中填写：
-   - **AI 服务商**：`openrouter` 或 `deepseek`
-   - **API Key**：根据所选服务商填写对应 Key
-     - OpenRouter Key：[openrouter.ai/keys](https://openrouter.ai/keys)
-     - DeepSeek Key：[platform.deepseek.com](https://platform.deepseek.com/api_keys)
-   - **使用模型**：
-     - OpenRouter 推荐 `openai/gpt-4o`、`google/gemini-2.0-flash-001`
-     - DeepSeek 官方推荐 `deepseek-v4-flash`（非思考）、`deepseek-v4-pro`（思考）；旧版 `deepseek-chat` / `deepseek-reasoner` 将于 2026/07/24 弃用
+   - **OpenRouter API Key**：[openrouter.ai/keys](https://openrouter.ai/keys)
+   - **使用模型**（OpenRouter 模型 ID）：
+     - 稳定优先：`openai/gpt-4o`
+     - 性价比首选：`deepseek/deepseek-v4-flash`
+     - 速度优先：`google/gemini-2.0-flash-001`
    - **每日调用上限**：默认 100 次
-   
-   > 不同服务商的 API Key 和模型独立存储，切换服务商时不会相互覆盖。
-   > 
-   > **注意**：DeepSeek 官方 API 服务器主要位于中国大陆，从 EdgeOne 海外加速区边缘节点访问可能出现 `net_exception_timeout` 超时。如遇超时，建议改用 **OpenRouter** 服务商，并选择模型 `deepseek/deepseek-v4-flash` 或 `deepseek/deepseek-v4-pro`，可获得相同模型效果且访问更稳定。
 
 ## API 端点
 

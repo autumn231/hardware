@@ -59,51 +59,27 @@ async function incrementCallCount() {
 }
 
 function buildPrompt(text, mcu, language) {
-  return `你是一位资深硬件工程师和嵌入式软件开发专家。请根据以下硬件芯片数据手册的文本内容，进行专业分析。
+  return `你是一位嵌入式硬件工程师。请根据芯片数据手册，为${mcu}平台生成${language}语言驱动代码。严格输出JSON，不要markdown和额外文字。
 
-目标MCU平台：${mcu}
-目标编程语言：${language}
-
-请严格按照以下JSON格式返回分析结果，不要添加任何markdown标记或额外文字，直接返回纯JSON：
-
+输出格式：
 {
-  "chip_info": {
-    "model": "芯片型号",
-    "purpose": "芯片主要用途",
-    "power_supply": "供电要求（电压、电流）",
-    "temperature_range": "工作温度范围",
-    "communication": "支持的通信接口/协议",
-    "pin_description": "主要引脚功能说明"
-  },
-  "working_principle": "芯片工作原理简介（200-500字）",
+  "chip_info": {"model":"型号","purpose":"用途","power_supply":"供电","temperature_range":"温度","communication":"通信接口","pin_description":"关键引脚"},
+  "working_principle": "200字内工作原理",
   "driver_functions": [
-    {
-      "name": "函数名称1",
-      "description": "该函数的功能说明",
-      "code": "完整的函数实现代码"
-    },
-    {
-      "name": "函数名称2",
-      "description": "该函数的功能说明",
-      "code": "完整的函数实现代码"
-    }
+    {"name":"函数名","description":"功能","code":"代码"},
+    {"name":"函数名","description":"功能","code":"代码"}
   ],
-  "initialization": {
-    "description": "初始化步骤说明",
-    "code": "完整的初始化代码"
-  },
-  "usage_notes": ["注意事项1", "注意事项2", "注意事项3", "注意事项4", "注意事项5"]
+  "initialization": {"description":"初始化说明","code":"代码"},
+  "usage_notes": ["注意1","注意2","注意3"]
 }
 
 要求：
-1. 两个驱动函数必须是最核心、最常用的功能函数（如读写寄存器、数据采集、通信发送等）
-2. 初始化代码必须完整可运行，包含所有必要的配置步骤
-3. 代码风格要通用实用，添加必要的错误处理
-4. 代码必须针对${mcu}平台和${language}语言编写
-5. 如果数据手册信息不足以确定某些细节，请根据芯片类型和常见用法给出合理的专业推断
-6. **代码中必须在关键位置添加中文注释**：包括但不限于以下位置——函数功能说明、关键参数含义、重要寄存器操作、时序要求、错误处理分支、引脚定义说明。注释要简洁实用，不要过度注释，只标注工程师真正需要关注的要点
+1. 只生成2个最核心驱动函数+1个初始化函数，代码精简实用
+2. 关键位置加中文注释，不要过度注释
+3. 信息不足时合理推断
+4. 输出简短，拒绝冗余
 
-以下是数据手册文本内容：
+数据手册：
 ${text}`;
 }
 
@@ -139,7 +115,7 @@ export async function onRequest(context) {
       return jsonResponse({ success: false, error: '缺少必要参数：text, mcu, language' }, 400);
     }
 
-    const truncatedText = text.length > 80000 ? text.substring(0, 80000) + '\n\n[注意：文本过长已截断]' : text;
+    const truncatedText = text.length > 50000 ? text.substring(0, 50000) + '\n\n[文本已截断]' : text;
     const model = await getModel();
     const prompt = buildPrompt(truncatedText, mcu, language);
 
@@ -156,15 +132,15 @@ export async function onRequest(context) {
         messages: [
           {
             role: 'system',
-            content: '你是一位专业的硬件工程师和嵌入式开发专家，擅长分析芯片数据手册并编写驱动代码。请始终以纯JSON格式返回结果，不要使用markdown代码块包裹。',
+            content: '你是嵌入式硬件工程师，输出纯JSON，不要markdown。',
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.3,
-        max_tokens: 4096,
+        temperature: 0.2,
+        max_tokens: 2048,
       }),
     });
 
