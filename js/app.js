@@ -199,10 +199,21 @@
       $('#principle-body').innerHTML = `<p class="principle-text">${escapeHtml(result.working_principle)}</p>`;
     }
 
+    const extMap = {
+      'C': '.c',
+      'Arduino': '.ino',
+      'STM32 HAL': '.c',
+      'Python': '.py',
+      'ESP-IDF': '.c',
+      'Rust': '.rs',
+    };
+    const ext = extMap[languageSelect.value] || '.c';
+
     if (result.driver_functions && result.driver_functions.length >= 1) {
       const d1 = result.driver_functions[0];
       $('#driver1-desc').textContent = d1.description || '';
       $('#driver1-code').textContent = d1.code || '';
+      $('#driver1-title').textContent = (d1.name || 'driver') + ext;
       $('#card-driver1 .card-header h3').textContent = `驱动函数 1：${d1.name || ''}`;
     }
 
@@ -210,12 +221,14 @@
       const d2 = result.driver_functions[1];
       $('#driver2-desc').textContent = d2.description || '';
       $('#driver2-code').textContent = d2.code || '';
+      $('#driver2-title').textContent = (d2.name || 'driver') + ext;
       $('#card-driver2 .card-header h3').textContent = `驱动函数 2：${d2.name || ''}`;
     }
 
     if (result.initialization) {
       $('#init-desc').textContent = result.initialization.description || '';
       $('#init-code').textContent = result.initialization.code || '';
+      $('#init-title').textContent = 'init' + ext;
     }
 
     if (result.usage_notes && result.usage_notes.length > 0) {
