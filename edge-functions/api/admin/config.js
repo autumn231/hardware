@@ -42,28 +42,21 @@ export async function onRequest(context) {
 
   try {
     if (context.request.method === 'GET') {
-      const provider = await AI_HARDWARE_TOOL.get('provider') || 'openrouter';
+      const apiKey = await AI_HARDWARE_TOOL.get('api_key');
+      const model = await AI_HARDWARE_TOOL.get('model') || 'openai/gpt-4o';
       const dailyLimit = await AI_HARDWARE_TOOL.get('daily_limit') || '100';
-      const providers = ['openrouter', 'deepseek'];
 
-      const providerConfigs = {};
-      for (const p of providers) {
-        const key = await AI_HARDWARE_TOOL.get(`api_key_${p}`);
-        const m = await AI_HARDWARE_TOOL.get(`model_${p}`);
-        providerConfigs[p] = {
-          api_key_set: !!key,
-          api_key_masked: key ? key.substring(0, 6) + '****' + key.substring(key.length - 4) : '',
-          model: m || (p === 'deepseek' ? 'deepseek-v4-flash' : 'openai/gpt-4o'),
-        };
-      }
+      const maskedKey = apiKey
+        ? apiKey.substring(0, 6) + '****' + apiKey.substring(apiKey.length - 4)
+        : '';
 
       return jsonResponse({
         success: true,
         config: {
-          provider,
+          api_key_set: !!apiKey,
+          api_key_masked: maskedKey,
+          model,
           daily_limit: Number(dailyLimit),
-          providers: providerConfigs,
-          ...providerConfigs[provider],
         },
       });
     }
@@ -72,20 +65,13 @@ export async function onRequest(context) {
       const body = await context.request.json();
       const updates = [];
 
-      if (body.provider !== undefined) {
-        await AI_HARDWARE_TOOL.put('provider', body.provider);
-        updates.push('provider');
-      }
-
-      const provider = body.provider || (await AI_HARDWARE_TOOL.get('provider')) || 'openrouter';
-
       if (body.api_key !== undefined) {
-        await AI_HARDWARE_TOOL.put(`api_key_${provider}`, body.api_key);
-        updates.push(`api_key_${provider}`);
+        await AI_HARDWARE_TOOL.put('api_key', body.api_key);
+        updates.push('api_key');
       }
       if (body.model !== undefined) {
-        await AI_HARDWARE_TOOL.put(`model_${provider}`, body.model);
-        updates.push(`model_${provider}`);
+        await AI_HARDWARE_TOOL.put('model', body.model);
+        updates.push('model');
       }
       if (body.daily_limit !== undefined) {
         await AI_HARDWARE_TOOL.put('daily_limit', String(body.daily_limit));
