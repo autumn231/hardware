@@ -157,39 +157,57 @@ export async function onRequest(context) {
     let content;
 
     if (provider === 'deepseek') {
+      const requestBody = {
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: '你是一位专业的硬件工程师和嵌入式开发专家，擅长分析芯片数据手册并编写驱动代码。请始终以纯JSON格式返回结果，不要使用markdown代码块包裹。',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        stream: false,
+      };
+
+      // DeepSeek Reasoner (R1) 不支持 temperature 和 top_p 参数
+      if (model !== 'deepseek-reasoner') {
+        requestBody.temperature = 0.3;
+        requestBody.max_tokens = 4096;
+      }
+
       const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: '你是一位专业的硬件工程师和嵌入式开发专家，擅长分析芯片数据手册并编写驱动代码。请始终以纯JSON格式返回结果，不要使用markdown代码块包裹。',
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: 0.3,
-          max_tokens: 4096,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!deepseekRes.ok) {
         const errText = await deepseekRes.text();
-        return jsonResponse({ success: false, error: `DeepSeek API 调用失败: ${deepseekRes.status} - ${errText}` }, 502);
+        console.error(`DeepSeek API error: status=${deepseekRes.status}, headers=${JSON.stringify(Object.fromEntries(deepseekRes.headers))}, body=${errText}`);
+        return jsonResponse({
+          success: false,
+          error: `DeepSeek API 调用失败`,
+          details: {
+            status: deepseekRes.status,
+            statusText: deepseekRes.statusText,
+            response: errText,
+          },
+        }, 502);
       }
 
       const deepseekData = await deepseekRes.json();
       content = deepseekData.choices?.[0]?.message?.content;
 
       if (!content) {
-        return jsonResponse({ success: false, error: 'DeepSeek 返回内容为空' }, 502);
+        console.error('DeepSeek response empty:', JSON.stringify(deepseekData));
+        return jsonResponse({ success: false, error: 'DeepSeek 返回内容为空', details: deepseekData }, 502);
       }
     } else {
       const openrouterRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
