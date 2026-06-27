@@ -75,6 +75,8 @@ hardware/
    - **每日调用上限**：默认 100 次
    
    > 不同服务商的 API Key 和模型独立存储，切换服务商时不会相互覆盖。
+   > 
+   > **注意**：DeepSeek 官方 API 服务器主要位于中国大陆，从 EdgeOne 海外加速区边缘节点访问可能出现 `net_exception_timeout` 超时。如遇超时，建议改用 **OpenRouter** 服务商，并选择模型 `deepseek/deepseek-v4-flash` 或 `deepseek/deepseek-v4-pro`，可获得相同模型效果且访问更稳定。
 
 ## API 端点
 

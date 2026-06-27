@@ -176,18 +176,31 @@ export async function onRequest(context) {
       const thinkingModels = ['deepseek-v4-pro', 'deepseek-reasoner'];
       if (!thinkingModels.includes(model)) {
         requestBody.temperature = 0.3;
-        requestBody.max_tokens = 4096;
+        requestBody.max_tokens = 2048;
       }
 
-      const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      let deepseekRes;
+      try {
+        deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } catch (fetchErr) {
+        console.error('DeepSeek fetch exception:', fetchErr.message);
+        return jsonResponse({
+          success: false,
+          error: 'DeepSeek 官方 API 连接超时或无法访问',
+          details: {
+            message: fetchErr.message,
+            suggestion: '建议：海外节点访问 DeepSeek 官方 API 可能不稳定。请改用 OpenRouter 服务商，并选择 deepseek/deepseek-v4-flash 或 deepseek/deepseek-v4-pro 模型，即可获得相同模型效果且访问更稳定。',
+          },
+        }, 504);
+      }
 
       if (!deepseekRes.ok) {
         const errText = await deepseekRes.text();
