@@ -65,8 +65,13 @@ hardware/
 1. 访问部署地址的 `/admin.html`
 2. 默认密码：`admin123`（建议首次登录后修改）
 3. 在「API 配置」中填写：
-   - **OpenRouter API Key**：从 [openrouter.ai/keys](https://openrouter.ai/keys) 获取
-   - **使用模型**：推荐 `openai/gpt-4o` 或 `google/gemini-2.0-flash-001`
+   - **AI 服务商**：`openrouter` 或 `deepseek`
+   - **API Key**：根据所选服务商填写对应 Key
+     - OpenRouter Key：[openrouter.ai/keys](https://openrouter.ai/keys)
+     - DeepSeek Key：[platform.deepseek.com](https://platform.deepseek.com/api_keys)
+   - **使用模型**：
+     - OpenRouter 推荐 `openai/gpt-4o`、`google/gemini-2.0-flash-001`
+     - DeepSeek 推荐 `deepseek-chat`、`deepseek-reasoner`
    - **每日调用上限**：默认 100 次
 
 ## API 端点

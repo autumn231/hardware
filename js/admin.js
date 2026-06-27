@@ -128,16 +128,28 @@
       });
       const data = await res.json();
       if (data.success) {
+        $('#config-provider').value = data.config.provider;
         $('#config-model').value = data.config.model;
         $('#config-daily-limit').value = data.config.daily_limit;
         $('#api-key-hint').textContent = data.config.api_key_set
           ? `当前：${data.config.api_key_masked}`
           : '当前未设置';
+        updateModelHint(data.config.provider);
       } else if (res.status === 401) {
         handleAuthError();
       }
     } catch {
       showToast('加载配置失败', 'error');
+    }
+  }
+
+  function updateModelHint(provider) {
+    const hint = $('#model-hint');
+    if (!hint) return;
+    if (provider === 'deepseek') {
+      hint.textContent = 'DeepSeek 常用：deepseek-chat, deepseek-reasoner';
+    } else {
+      hint.textContent = 'OpenRouter 常用：openai/gpt-4o, google/gemini-2.0-flash-001, deepseek/deepseek-chat';
     }
   }
 
@@ -189,13 +201,22 @@
     }
   });
 
+  const providerSelect = $('#config-provider');
+  if (providerSelect) {
+    providerSelect.addEventListener('change', () => {
+      updateModelHint(providerSelect.value);
+    });
+  }
+
   saveConfigBtn.addEventListener('click', async () => {
     const apiKey = $('#config-api-key').value.trim();
+    const provider = $('#config-provider').value;
     const model = $('#config-model').value.trim();
     const dailyLimit = parseInt($('#config-daily-limit').value, 10);
 
     const payload = {};
     if (apiKey) payload.api_key = apiKey;
+    payload.provider = provider;
     if (model) payload.model = model;
     if (!isNaN(dailyLimit) && dailyLimit > 0) payload.daily_limit = dailyLimit;
 

@@ -43,6 +43,7 @@ export async function onRequest(context) {
   try {
     if (context.request.method === 'GET') {
       const apiKey = await AI_HARDWARE_TOOL.get('api_key');
+      const provider = await AI_HARDWARE_TOOL.get('provider') || 'openrouter';
       const model = await AI_HARDWARE_TOOL.get('model') || 'openai/gpt-4o';
       const dailyLimit = await AI_HARDWARE_TOOL.get('daily_limit') || '100';
 
@@ -55,6 +56,7 @@ export async function onRequest(context) {
         config: {
           api_key_set: !!apiKey,
           api_key_masked: maskedKey,
+          provider,
           model,
           daily_limit: Number(dailyLimit),
         },
@@ -68,6 +70,10 @@ export async function onRequest(context) {
       if (body.api_key !== undefined) {
         await AI_HARDWARE_TOOL.put('api_key', body.api_key);
         updates.push('api_key');
+      }
+      if (body.provider !== undefined) {
+        await AI_HARDWARE_TOOL.put('provider', body.provider);
+        updates.push('provider');
       }
       if (body.model !== undefined) {
         await AI_HARDWARE_TOOL.put('model', body.model);
