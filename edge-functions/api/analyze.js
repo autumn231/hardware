@@ -30,13 +30,14 @@ async function getProvider() {
 }
 
 async function getApiKey() {
-  const key = await AI_HARDWARE_TOOL.get('api_key');
+  const provider = await getProvider();
+  const key = await AI_HARDWARE_TOOL.get(`api_key_${provider}`);
   return key || '';
 }
 
 async function getModel() {
-  const model = await AI_HARDWARE_TOOL.get('model');
   const provider = await getProvider();
+  const model = await AI_HARDWARE_TOOL.get(`model_${provider}`);
   if (!model) {
     return provider === 'deepseek' ? 'deepseek-chat' : 'openai/gpt-4o';
   }

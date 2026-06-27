@@ -5,10 +5,10 @@
 ## 功能特性
 
 - 📄 **PDF 数据手册上传** — 支持拖拽或点击上传 PDF 文件
-- 🤖 **AI 智能分析** — 调用 OpenRouter 大模型 API 自动提取芯片关键信息
+- 🤖 **AI 智能分析** — 支持 OpenRouter 和 DeepSeek 双服务商，自动提取芯片关键信息
 - ⚡ **驱动代码生成** — 针对目标 MCU 和编程语言，自动生成两个核心驱动函数 + 完整初始化代码
 - 🔧 **多平台支持** — 支持 C / Arduino / STM32 HAL / Python (MicroPython) / ESP-IDF / Rust
-- 📊 **管理后台** — 带密码登录的管理面板，支持 API Key 配置、调用统计、限额设置
+- 📊 **管理后台** — 带密码登录的管理面板，支持 AI 服务商切换、API Key 配置、调用统计、限额设置
 - 💾 **KV 持久化** — 所有配置和统计数据存储在 EdgeOne KV 中
 
 ## 项目结构
@@ -73,6 +73,8 @@ hardware/
      - OpenRouter 推荐 `openai/gpt-4o`、`google/gemini-2.0-flash-001`
      - DeepSeek 推荐 `deepseek-chat`、`deepseek-reasoner`
    - **每日调用上限**：默认 100 次
+   
+   > 不同服务商的 API Key 和模型独立存储，切换服务商时不会相互覆盖。
 
 ## API 端点
 

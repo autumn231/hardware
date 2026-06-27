@@ -205,7 +205,31 @@
   if (providerSelect) {
     providerSelect.addEventListener('change', () => {
       updateModelHint(providerSelect.value);
+      loadProviderConfig(providerSelect.value);
     });
+  }
+
+  async function loadProviderConfig(provider) {
+    try {
+      const res = await fetch('/api/admin/config', {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        const cfg = data.config.providers && data.config.providers[provider];
+        if (cfg) {
+          $('#config-model').value = cfg.model || '';
+          $('#config-api-key').value = '';
+          $('#api-key-hint').textContent = cfg.api_key_set
+            ? `当前：${cfg.api_key_masked}`
+            : '当前未设置';
+        }
+      } else if (res.status === 401) {
+        handleAuthError();
+      }
+    } catch {
+      showToast('加载服务商配置失败', 'error');
+    }
   }
 
   saveConfigBtn.addEventListener('click', async () => {
