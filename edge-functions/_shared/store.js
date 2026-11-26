@@ -6,7 +6,7 @@
 
 import { kv } from './http.js';
 
-export const PROVIDER_IDS = ['sensenova', 'deepseek', 'gemini', 'openrouter', 'custom'];
+export const PROVIDER_IDS = ['makers', 'openrouter'];
 
 function emptyProvider() {
   return { key: '', model: '', base_url: '' };
@@ -15,13 +15,10 @@ function emptyProvider() {
 export function defaultConfig() {
   return {
     providers: {
-      sensenova: emptyProvider(),
-      deepseek: emptyProvider(),
-      gemini: emptyProvider(),
+      makers: emptyProvider(),
       openrouter: emptyProvider(),
-      custom: emptyProvider(),
     },
-    order: ['sensenova', 'deepseek', 'gemini', 'openrouter', 'custom'],
+    order: ['makers', 'openrouter'],
     daily_limit: 100,
     ip_daily_limit: 20,
     access_code: '',
@@ -50,6 +47,12 @@ function normalizeConfig(raw) {
       }
       cfg.order = order;
     }
+    // One-time migration: a config written while removed providers still
+    // existed restarts from the canonical order, official built-in first.
+    const hadRemoved =
+      (Array.isArray(raw.order) && raw.order.some((id) => !PROVIDER_IDS.includes(id))) ||
+      (raw.providers && Object.keys(raw.providers).some((id) => !PROVIDER_IDS.includes(id)));
+    if (hadRemoved) cfg.order = ['makers', 'openrouter'];
     if (Number(raw.daily_limit) > 0) cfg.daily_limit = Number(raw.daily_limit);
     if (raw.ip_daily_limit !== undefined && Number(raw.ip_daily_limit) >= 0) {
       cfg.ip_daily_limit = Number(raw.ip_daily_limit);
@@ -75,7 +78,7 @@ export async function loadConfig() {
   if (legacyKey) {
     cfg.providers.openrouter.key = legacyKey;
     if (legacyModel) cfg.providers.openrouter.model = legacyModel;
-    cfg.order = ['openrouter', 'sensenova', 'deepseek', 'gemini', 'custom'];
+    cfg.order = ['makers', 'openrouter'];
   }
   if (legacyLimit && Number(legacyLimit) > 0) cfg.daily_limit = Number(legacyLimit);
   await saveConfig(cfg);
@@ -201,6 +204,63 @@ export async function getProviderStats() {
     return raw ? JSON.parse(raw) : {};
   } catch (e) {
     return {};
+  }
+}
+
+// ---- monthly token usage (per provider, from real API responses) ----------
+// The EdgeOne built-in model quota is a monthly account-level pool, so the
+// counter that matters is monthly. Only usage figures actually returned by
+// an API response are recorded; nothing is estimated.
+
+export function monthStr() {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+export async function recordTokenUsage(provider, usage, officialUsage) {
+  if (!provider || !usage) return;
+  try {
+    const key = `token_usage_${monthStr()}`;
+    const raw = await kv().get(key);
+    const data = raw ? JSON.parse(raw) : { providers: {} };
+    const entry = data.providers[provider] || {
+      calls: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      official_tokens: 0,
+    };
+    const prompt = Number(usage.prompt_tokens) || 0;
+    const completion = Number(usage.completion_tokens) || 0;
+    const total = Number(usage.total_tokens) || prompt + completion;
+    entry.calls += 1;
+    entry.prompt_tokens += prompt;
+    entry.completion_tokens += completion;
+    entry.total_tokens += total;
+    if (officialUsage && Number(officialUsage.total_tokens)) {
+      entry.official_tokens += Number(officialUsage.total_tokens);
+    }
+    data.providers[provider] = entry;
+    data.updated_at = Date.now();
+    await kv().put(key, JSON.stringify(data));
+  } catch (e) {
+    // ignore
+  }
+}
+
+export async function getTokenUsage() {
+  try {
+    const raw = await kv().get(`token_usage_${monthStr()}`);
+    const data = raw ? JSON.parse(raw) : { providers: {} };
+    let total = 0;
+    for (const id of Object.keys(data.providers || {})) {
+      total += data.providers[id].total_tokens || 0;
+    }
+    return { month: monthStr(), providers: data.providers || {}, total_tokens: total };
+  } catch (e) {
+    return { month: monthStr(), providers: {}, total_tokens: 0 };
   }
 }
 

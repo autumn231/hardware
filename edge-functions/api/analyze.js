@@ -11,6 +11,7 @@ import {
   getCached,
   setCached,
   recordProviderStat,
+  recordTokenUsage,
   pushEvent,
 } from '../_shared/store.js';
 import { chatWithFallback, callProvider, streamChatWithFallback } from '../_shared/providers.js';
@@ -35,6 +36,7 @@ async function parseAndRepair(cfg, first, request) {
       );
       parsed = extractJson(fix.content);
       repaired = !!parsed;
+      await recordTokenUsage(first.provider, fix.usage, fix.officialUsage);
     } catch (e) {
       parsed = null;
     }
@@ -53,6 +55,7 @@ async function finalizeSuccess(cfg, first, started, request, cacheKey, ipHash, e
     repaired,
     ...(extraMeta || {}),
   };
+  await recordTokenUsage(first.provider, first.usage, first.officialUsage);
   const result = parsed ? normalizeResult(parsed) : { raw_content: first.content };
   // A parseable answer with no driver code at all is a degraded result
   // (weak model or truncated output). Flag it so the UI can warn instead

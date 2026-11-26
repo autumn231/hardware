@@ -4,31 +4,13 @@
 // errors, which is what makes a flaky route to one vendor survivable.
 
 export const PROVIDERS = {
-  sensenova: {
-    name: 'SenseNova（商汤）',
-    baseUrl: 'https://token.sensenova.cn/v1',
-    defaultModel: 'deepseek-v4-flash',
-    jsonMode: false,
-    // SenseNova serves DeepSeek with reasoning on by default. Reasoning eats
-    // the whole token budget and returns empty content, so it is disabled.
-    extraBody: { thinking: { type: 'disabled' } },
-    keyHint: '在 token.sensenova.cn 申请的 API Key',
-  },
-  deepseek: {
-    name: 'DeepSeek 官方',
-    baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
+  makers: {
+    name: 'EdgeOne 官方内置',
+    baseUrl: 'https://ai-gateway.edgeone.link/v1',
+    defaultModel: '@makers/deepseek-v4-flash',
     jsonMode: true,
     extraBody: {},
-    keyHint: '在 platform.deepseek.com 申请的 API Key',
-  },
-  gemini: {
-    name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-2.5-flash',
-    jsonMode: true,
-    extraBody: {},
-    keyHint: '在 Google AI Studio 申请的 API Key',
+    keyHint: '在 EdgeOne 控制台 Makers → Models → API Key 创建的密钥',
   },
   openrouter: {
     name: 'OpenRouter',
@@ -38,21 +20,12 @@ export const PROVIDERS = {
     extraBody: {},
     keyHint: '在 openrouter.ai/keys 申请的 API Key',
   },
-  custom: {
-    name: '自定义（OpenAI 兼容）',
-    baseUrl: '',
-    defaultModel: '',
-    jsonMode: false,
-    extraBody: {},
-    keyHint: '任意 OpenAI 兼容服务的 API Key',
-  },
 };
 
 const CALL_TIMEOUT_MS = 50000;
 const STREAM_TIMEOUT_MS = 150000;
 
 function providerBaseUrl(id, providerCfg) {
-  if (id === 'custom') return (providerCfg.base_url || '').replace(/\/+$/, '');
   return PROVIDERS[id].baseUrl;
 }
 
@@ -134,7 +107,7 @@ export async function callProvider(id, providerCfg, messages, request, opts) {
   if (!content) {
     throw new Error(`${preset.name} 返回内容为空`);
   }
-  return { content, model };
+  return { content, model, usage: data.usage || null, officialUsage: data.makers_models_usage || null };
 }
 
 // Walk the configured order until one provider answers. Returns the winning
@@ -150,9 +123,9 @@ export async function chatWithFallback(cfg, messages, request, opts) {
     }
     const started = Date.now();
     try {
-      const { content, model } = await callProvider(id, providerCfg, messages, request, opts);
+      const { content, model, usage, officialUsage } = await callProvider(id, providerCfg, messages, request, opts);
       attempts.push({ provider: id, ok: true, ms: Date.now() - started });
-      return { content, provider: id, model, attempts };
+      return { content, provider: id, model, usage, officialUsage, attempts };
     } catch (e) {
       attempts.push({
         provider: id,
@@ -200,6 +173,7 @@ export async function streamChatWithFallback(cfg, messages, request, onEvent) {
 
 async function streamProvider(id, providerCfg, messages, request, onEvent) {
   const { url, headers, body, model, preset } = buildRequest(id, providerCfg, messages, request, { stream: true });
+  body.stream_options = { include_usage: true };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
   let res;
@@ -210,9 +184,10 @@ async function streamProvider(id, providerCfg, messages, request, onEvent) {
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    if (res.status === 400 && body.response_format) {
+    if (res.status === 400 && (body.response_format || body.stream_options)) {
       const retryBody = { ...body };
       delete retryBody.response_format;
+      delete retryBody.stream_options;
       res = await fetch(url, {
         method: 'POST',
         headers,
@@ -236,6 +211,8 @@ async function streamProvider(id, providerCfg, messages, request, onEvent) {
   const decoder = new TextDecoder();
   let buffer = '';
   let content = '';
+  let usage = null;
+  let officialUsage = null;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -250,6 +227,8 @@ async function streamProvider(id, providerCfg, messages, request, onEvent) {
         if (payload === '[DONE]') continue;
         try {
           const json = JSON.parse(payload);
+          if (json.usage) usage = json.usage;
+          if (json.makers_models_usage) officialUsage = json.makers_models_usage;
           const delta = json.choices && json.choices[0] && json.choices[0].delta;
           const piece = (delta && delta.content) || '';
           if (piece) {
@@ -265,7 +244,7 @@ async function streamProvider(id, providerCfg, messages, request, onEvent) {
     clearTimeout(timer);
   }
   if (!content) throw new Error(`${preset.name} 流式返回内容为空`);
-  return { content, provider: id, model };
+  return { content, provider: id, model, usage, officialUsage };
 }
 
 // Lightweight reachability probe used by the admin connectivity test. It

@@ -67,9 +67,17 @@ fileInput.addEventListener('change', function (e) {
 if (e.target.files.length > 0) handleFile(e.target.files[0]);
 });
 
+var MAX_FILE_BYTES = 20 * 1024 * 1024;
+var MAX_PDF_PAGES = 500;
+var MAX_TEXT_CHARS_LIMIT = 1500000;
+
 async function handleFile(file) {
 if (file.type!== 'application/pdf' &&!/\.pdf$/i.test(file.name)) {
 showToast('请选择 PDF 文件', 'error');
+return;
+}
+if (file.size > MAX_FILE_BYTES) {
+showToast('文件过大：单个 PDF 上限 20MB', 'error');
 return;
 }
 pdfFileName = file.name;
@@ -82,6 +90,9 @@ pageTexts = await extractPdfText(file);
 pdfTotalChars = pageTexts.reduce(function (sum, t) { return sum + t.length;}, 0);
 if (!pdfTotalChars) {
 throw new Error('PDF 中未提取到文本内容，该 PDF 可能是扫描件或图片格式');
+}
+if (pdfTotalChars > MAX_TEXT_CHARS_LIMIT) {
+throw new Error('提取文本过长（' + pdfTotalChars.toLocaleString() + ' 字符），上限 150 万字符，请拆分手册后重试');
 }
 var note = '共 ' + pageTexts.length + ' 页，提取文本 ' + pdfTotalChars.toLocaleString() + ' 字符';
 if (pdfTotalChars > TEXT_BUDGET) {
@@ -99,6 +110,9 @@ showToast(err.message, 'error');
 async function extractPdfText(file) {
 var arrayBuffer = await file.arrayBuffer();
 var pdf = await pdfjsLib.getDocument({ data: arrayBuffer}).promise;
+if (pdf.numPages > MAX_PDF_PAGES) {
+throw new Error('手册页数过多：共 ' + pdf.numPages + ' 页，上限 ' + MAX_PDF_PAGES + ' 页');
+}
 var pages = [];
 for (var i = 1; i <= pdf.numPages; i++) {
 var page = await pdf.getPage(i);
@@ -359,11 +373,8 @@ elapsedTimer = null;
 var EXT_MAP = { C: '.c', Arduino: '.ino', 'STM32 HAL': '.c', Python: '.py', 'ESP-IDF': '.c', Rust: '.rs'};
 var HLJS_MAP = { C: 'c', Arduino: 'cpp', 'STM32 HAL': 'c', Python: 'python', 'ESP-IDF': 'c', Rust: 'rust'};
 var PROVIDER_NAMES = {
-sensenova: 'SenseNova（商汤）',
-deepseek: 'DeepSeek 官方',
-gemini: 'Google Gemini',
+makers: 'EdgeOne 官方内置',
 openrouter: 'OpenRouter',
-custom: '自定义服务',
 };
 
 function renderResult(result, meta) {

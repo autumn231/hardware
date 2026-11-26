@@ -8,6 +8,7 @@ import {
   getIpCount,
   incrementIpCount,
   recordProviderStat,
+  recordTokenUsage,
   pushEvent,
 } from '../_shared/store.js';
 import { chatWithFallback } from '../_shared/providers.js';
@@ -67,6 +68,7 @@ export async function onRequest(context) {
     await incrementCallCount();
     await incrementIpCount(ipHash);
     await recordProviderStat(first.provider, true, ms);
+    await recordTokenUsage(first.provider, first.usage, first.officialUsage);
     await pushEvent({ type: 'chat', ok: true, provider: first.provider, model: first.model, ms });
     return jsonResponse({
       success: true,

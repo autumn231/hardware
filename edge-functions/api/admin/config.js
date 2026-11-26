@@ -23,7 +23,7 @@ function publicConfig(cfg) {
       key_set: !!p.key,
       key_masked: maskKey(p.key),
       model: p.model || PROVIDERS[id].defaultModel,
-      base_url: id === 'custom' ? p.base_url || '' : PROVIDERS[id].baseUrl,
+      base_url: PROVIDERS[id].baseUrl,
       key_hint: PROVIDERS[id].keyHint,
     };
   }
@@ -80,10 +80,6 @@ export async function onRequest(context) {
           if (typeof incoming.model === 'string') {
             target.model = incoming.model.trim();
             updated.push(`${id}.model`);
-          }
-          if (id === 'custom' && typeof incoming.base_url === 'string') {
-            target.base_url = incoming.base_url.trim();
-            updated.push('custom.base_url');
           }
         }
       }

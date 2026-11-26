@@ -6,6 +6,7 @@ import {
   verifySession,
   loadConfig,
   getProviderStats,
+  getTokenUsage,
   getEvents,
 } from '../../_shared/store.js';
 
@@ -34,6 +35,7 @@ export async function onRequest(context) {
           ip_daily_limit: cfg.ip_daily_limit,
           order: cfg.order,
           provider_stats: await getProviderStats(),
+          token_usage: await getTokenUsage(),
           events: await getEvents(10),
         },
       });

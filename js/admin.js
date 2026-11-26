@@ -141,24 +141,13 @@
     modelInput.value = p.model || '';
     modelGroup.appendChild(modelInput);
     row.appendChild(modelGroup);
-    if (id === 'custom') {
-      var baseGroup = fieldGroup('接口地址（以 /v1 结尾）');
-      var baseInput = document.createElement('input');
-      baseInput.type = 'text';
-      baseInput.id = 'base-' + id;
-      baseInput.value = p.base_url || '';
-      baseInput.placeholder = 'https://example.com/v1';
-      baseGroup.appendChild(baseInput);
-      row.appendChild(baseGroup);
-    } else {
-      var baseGroup2 = fieldGroup('接口地址');
-      var baseText = document.createElement('input');
-      baseText.type = 'text';
-      baseText.value = p.base_url || '';
-      baseText.disabled = true;
-      baseGroup2.appendChild(baseText);
-      row.appendChild(baseGroup2);
-    }
+    var baseGroup2 = fieldGroup('接口地址');
+    var baseText = document.createElement('input');
+    baseText.type = 'text';
+    baseText.value = p.base_url || '';
+    baseText.disabled = true;
+    baseGroup2.appendChild(baseText);
+    row.appendChild(baseGroup2);
     body.appendChild(row);
 
     var actions = document.createElement('div');
@@ -320,16 +309,14 @@
       $('#stat-total').textContent = data.stats.total;
       $('#stat-limit').textContent = data.stats.daily_limit;
       renderProviderStats(data.stats.provider_stats || {});
+      renderTokenUsage(data.stats.token_usage);
       renderEvents(data.stats.events || []);
     }
   }
 
   var PROVIDER_LABELS = {
-    sensenova: 'SenseNova（商汤）',
-    deepseek: 'DeepSeek 官方',
-    gemini: 'Google Gemini',
+    makers: 'EdgeOne 官方内置',
     openrouter: 'OpenRouter',
-    custom: '自定义服务',
   };
 
   function renderProviderStats(stats) {
@@ -352,6 +339,45 @@
     html += '</tbody>';
     table.innerHTML = html;
     wrap.appendChild(table);
+  }
+
+  function renderTokenUsage(tu) {
+    var wrap = $('#token-usage-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    var title = document.createElement('h4');
+    title.className = 'sub-title';
+    title.textContent = '本月 Token 用量' + (tu && tu.month ? '（' + tu.month + '）' : '');
+    wrap.appendChild(title);
+    var providers = (tu && tu.providers) || {};
+    var ids = Object.keys(providers);
+    if (!ids.length) {
+      var empty = document.createElement('p');
+      empty.className = 'panel-note';
+      empty.textContent = '本月暂无带用量回执的调用记录。';
+      wrap.appendChild(empty);
+    } else {
+      var table = document.createElement('table');
+      table.className = 'data-table';
+      var html = '<thead><tr><th>供应商</th><th>调用</th><th>输入 tokens</th><th>输出 tokens</th><th>合计</th></tr></thead><tbody>';
+      ids.forEach(function (id) {
+        var st = providers[id];
+        html += '<tr><td>' + (PROVIDER_LABELS[id] || id) + '</td><td>' + st.calls + '</td><td>' +
+          st.prompt_tokens.toLocaleString() + '</td><td>' + st.completion_tokens.toLocaleString() +
+          '</td><td>' + st.total_tokens.toLocaleString() + '</td></tr>';
+        if (st.official_tokens > 0) {
+          html += '<tr><td colspan="5">其中官方额度扣减口径：' + st.official_tokens.toLocaleString() + ' tokens</td></tr>';
+        }
+      });
+      html += '</tbody>';
+      table.innerHTML = html;
+      wrap.appendChild(table);
+    }
+    var note = document.createElement('p');
+    note.className = 'panel-note';
+    note.textContent = '本月合计 ' + ((tu && tu.total_tokens) || 0).toLocaleString() +
+      ' tokens（仅统计本应用经手、且接口返回了用量回执的调用）。EdgeOne 内置模型免费额度为每月 50 万 tokens、账户级共享，权威用量请看 EdgeOne 控制台 Makers 概览。';
+    wrap.appendChild(note);
   }
 
   function renderEvents(events) {
