@@ -191,6 +191,12 @@ export async function onRequest(context) {
             // client went away
           }
         };
+        // Heartbeats for the whole response lifetime: provider legs can
+        // stay silent for a long time (queueing, prompt processing) and
+        // any idle timeout along the client path would otherwise sever
+        // the stream mid-analysis.
+        const heartbeat = setInterval(() => send({ type: 'heartbeat' }), 5000);
+        try {
         if (cached) {
           send({
             type: 'done',
@@ -222,6 +228,9 @@ export async function onRequest(context) {
           });
         }
         controller.close();
+        } finally {
+          clearInterval(heartbeat);
+        }
       },
     });
     return new Response(stream, {
