@@ -53,7 +53,7 @@ async function parseAndRepair(cfg, first, request) {
   return { parsed, repaired };
 }
 
-const CHUNK_MIN_TEXT_CHARS = 16000;
+const CHUNK_MIN_TEXT_CHARS = 1200;
 const SECTION_TIMEOUT_MS = 45000;
 
 function sumUsage(usages) {

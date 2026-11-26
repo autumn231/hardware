@@ -8,13 +8,13 @@ export async function onRequest(context) {
   if (preflight) return preflight;
 
   if (!kvAvailable()) {
-    return jsonResponse({ success: true, version: '6.0.2', kv: false, providers_configured: 0 }, 200);
+    return jsonResponse({ success: true, version: '6.0.3', kv: false, providers_configured: 0 }, 200);
   }
   try {
     const cfg = await loadConfig();
     const configured = PROVIDER_IDS.filter((id) => cfg.providers[id] && cfg.providers[id].key).length;
-    return jsonResponse({ success: true, version: '6.0.2', kv: true, providers_configured: configured });
+    return jsonResponse({ success: true, version: '6.0.3', kv: true, providers_configured: configured });
   } catch (err) {
-    return jsonResponse({ success: false, version: '6.0.2', kv: true, error: err.message }, 500);
+    return jsonResponse({ success: false, version: '6.0.3', kv: true, error: err.message }, 500);
   }
 }
