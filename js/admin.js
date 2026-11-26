@@ -1,305 +1,335 @@
 (function () {
-  const $ = (sel) => document.querySelector(sel);
+  var $ = function (sel) { return document.querySelector(sel); };
+  var TOKEN_KEY = 'hw_admin_token';
 
-  const loginSection = $('#login-section');
-  const adminSection = $('#admin-section');
-  const loginBtn = $('#login-btn');
-  const logoutBtn = $('#logout-btn');
-  const passwordInput = $('#admin-password');
-  const loginError = $('#login-error');
+  var loginSection = $('#login-section');
+  var panelSection = $('#panel-section');
+  var providerList = $('#provider-list');
+  var orderList = $('#order-list');
 
-  const refreshStatsBtn = $('#refresh-stats-btn');
-  const resetTodayBtn = $('#reset-today-btn');
-  const resetAllBtn = $('#reset-all-btn');
-  const saveConfigBtn = $('#save-config-btn');
-  const changePasswordBtn = $('#change-password-btn');
+  var config = null; // last config fetched from the server (public view)
+  var order = []; // working copy of the provider order
 
-  let authToken = localStorage.getItem('admin_token') || '';
+  function token() {
+    return sessionStorage.getItem(TOKEN_KEY) || '';
+  }
 
-  function init() {
-    if (authToken) {
-      verifyAndShowAdmin();
-    } else {
-      showLogin();
+  async function api(path, options) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (token()) headers['Authorization'] = 'Bearer ' + token();
+    var res = await fetch(path, Object.assign({}, options || {}, { headers: headers }));
+    var data = await res.json().catch(function () { return null; });
+    if (res.status === 401) {
+      logout();
+      throw new Error('登录已过期，请重新登录');
     }
+    if (!data) throw new Error('服务器无响应');
+    return data;
   }
 
-  function showLogin() {
-    loginSection.style.display = '';
-    adminSection.style.display = 'none';
-  }
+  // ---------- login ----------
 
-  function showAdmin() {
-    loginSection.style.display = 'none';
-    adminSection.style.display = '';
-    loadStats();
-    loadConfig();
-  }
+  $('#login-btn').addEventListener('click', doLogin);
+  $('#password-input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doLogin();
+  });
+  $('#logout-btn').addEventListener('click', logout);
 
-  async function verifyAndShowAdmin() {
+  async function doLogin() {
+    var password = $('#password-input').value;
+    var errorEl = $('#login-error');
+    errorEl.textContent = '';
     try {
-      const res = await fetch('/api/admin/config', {
-        headers: { 'Authorization': `Bearer ${authToken}` },
-      });
-      if (res.ok) {
-        showAdmin();
-      } else {
-        localStorage.removeItem('admin_token');
-        authToken = '';
-        showLogin();
-      }
-    } catch {
-      showLogin();
-    }
-  }
-
-  loginBtn.addEventListener('click', async () => {
-    const password = passwordInput.value.trim();
-    if (!password) {
-      loginError.textContent = '请输入密码';
-      loginError.style.display = '';
-      return;
-    }
-
-    loginBtn.disabled = true;
-    loginBtn.textContent = '登录中...';
-
-    try {
-      const res = await fetch('/api/admin/login', {
+      var res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: password }),
       });
-
-      const data = await res.json();
-
-      if (data.success) {
-        authToken = data.token;
-        localStorage.setItem('admin_token', authToken);
-        loginError.style.display = 'none';
-        showAdmin();
-      } else {
-        loginError.textContent = data.error || '登录失败';
-        loginError.style.display = '';
-      }
+      var data = await res.json();
+      if (!data.success) throw new Error(data.error || '登录失败');
+      sessionStorage.setItem(TOKEN_KEY, data.token);
+      await enterPanel();
     } catch (err) {
-      loginError.textContent = '网络错误，请重试';
-      loginError.style.display = '';
-    } finally {
-      loginBtn.disabled = false;
-      loginBtn.textContent = '登录';
-    }
-  });
-
-  passwordInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') loginBtn.click();
-  });
-
-  logoutBtn.addEventListener('click', () => {
-    authToken = '';
-    localStorage.removeItem('admin_token');
-    passwordInput.value = '';
-    showLogin();
-  });
-
-  async function loadStats() {
-    try {
-      const res = await fetch('/api/admin/stats', {
-        headers: { 'Authorization': `Bearer ${authToken}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        $('#stat-today').textContent = data.stats.today_calls;
-        $('#stat-limit').textContent = data.stats.daily_limit;
-        $('#stat-total').textContent = data.stats.total_calls;
-        $('#stat-date').textContent = data.stats.date;
-      } else if (res.status === 401) {
-        handleAuthError();
-      }
-    } catch {
-      showToast('加载统计失败', 'error');
+      errorEl.textContent = err.message;
     }
   }
 
-  async function loadConfig() {
-    try {
-      const res = await fetch('/api/admin/config', {
-        headers: { 'Authorization': `Bearer ${authToken}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        $('#config-model').value = data.config.model;
-        $('#config-daily-limit').value = data.config.daily_limit;
-        $('#api-key-hint').textContent = data.config.api_key_set
-          ? `当前：${data.config.api_key_masked}`
-          : '当前未设置';
-      } else if (res.status === 401) {
-        handleAuthError();
-      }
-    } catch {
-      showToast('加载配置失败', 'error');
-    }
+  function logout() {
+    sessionStorage.removeItem(TOKEN_KEY);
+    panelSection.style.display = 'none';
+    loginSection.style.display = '';
   }
 
-  refreshStatsBtn.addEventListener('click', loadStats);
+  // ---------- panel ----------
 
-  resetTodayBtn.addEventListener('click', async () => {
-    if (!confirm('确定要重置今日调用次数吗？')) return;
-    try {
-      const res = await fetch('/api/admin/stats', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ action: 'reset_today' }),
+  async function enterPanel() {
+    var data = await api('/api/admin/config');
+    if (!data.success) throw new Error(data.error || '读取配置失败');
+    config = data.config;
+    order = config.order.slice();
+    loginSection.style.display = 'none';
+    panelSection.style.display = '';
+    renderProviders();
+    renderOrder();
+    $('#daily-limit-input').value = config.daily_limit;
+    $('#access-code-input').value = '';
+    $('#access-code-input').placeholder = config.access_code_set
+      ? '已启用口令，输入新口令可更换，清空并保存则关闭'
+      : '启用后，用户分析时需输入此口令';
+    await refreshStats();
+  }
+
+  function renderProviders() {
+    providerList.innerHTML = '';
+    order.concat(Object.keys(config.providers).filter(function (id) { return !order.includes(id); }))
+      .forEach(function (id) {
+        providerList.appendChild(providerCard(id, config.providers[id]));
       });
-      const data = await res.json();
-      if (data.success) {
-        showToast('今日调用次数已重置', 'success');
-        loadStats();
-      } else {
-        showToast(data.error || '操作失败', 'error');
-      }
-    } catch {
-      showToast('操作失败', 'error');
-    }
-  });
+  }
 
-  resetAllBtn.addEventListener('click', async () => {
-    if (!confirm('确定要重置所有调用次数吗？此操作不可恢复！')) return;
-    try {
-      const res = await fetch('/api/admin/stats', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ action: 'reset_all' }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast('所有调用次数已重置', 'success');
-        loadStats();
-      } else {
-        showToast(data.error || '操作失败', 'error');
-      }
-    } catch {
-      showToast('操作失败', 'error');
-    }
-  });
+  function providerCard(id, p) {
+    var card = document.createElement('div');
+    card.className = 'card provider-card';
+    var rank = order.indexOf(id);
+    card.innerHTML =
+      '<div class="card-header"><span class="card-icon">🤖</span><h3></h3>' +
+      '<span class="provider-rank"></span>' +
+      '<span class="provider-state"></span></div>';
+    card.querySelector('h3').textContent = p.name;
+    card.querySelector('.provider-rank').textContent = rank >= 0 ? '第 ' + (rank + 1) + ' 顺位' : '';
+    var state = card.querySelector('.provider-state');
+    state.textContent = p.key_set ? '已配置 ' + p.key_masked : '未配置 Key';
+    state.className = 'provider-state ' + (p.key_set ? 'ok' : 'off');
 
-  saveConfigBtn.addEventListener('click', async () => {
-    const apiKey = $('#config-api-key').value.trim();
-    const model = $('#config-model').value.trim();
-    const dailyLimit = parseInt($('#config-daily-limit').value, 10);
+    var body = document.createElement('div');
+    body.className = 'card-body';
 
-    const payload = {};
-    if (apiKey) payload.api_key = apiKey;
-    if (model) payload.model = model;
-    if (!isNaN(dailyLimit) && dailyLimit > 0) payload.daily_limit = dailyLimit;
-
-    if (Object.keys(payload).length === 0) {
-      showToast('没有需要保存的更改', 'error');
-      return;
-    }
-
-    saveConfigBtn.disabled = true;
-    saveConfigBtn.textContent = '保存中...';
-
-    try {
-      const res = await fetch('/api/admin/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast('配置已保存', 'success');
-        $('#config-api-key').value = '';
-        loadConfig();
-      } else {
-        if (res.status === 401) {
-          handleAuthError();
-        } else {
-          showToast(data.error || '保存失败', 'error');
+    var keyGroup = fieldGroup('API Key' + (p.key_hint ? '（' + p.key_hint + '）' : ''));
+    var keyInput = document.createElement('input');
+    keyInput.type = 'password';
+    keyInput.id = 'key-' + id;
+    keyInput.placeholder = p.key_set ? '已保存，留空表示不修改' : '粘贴 API Key';
+    keyInput.autocomplete = 'off';
+    keyGroup.appendChild(keyInput);
+    if (p.key_set) {
+      var clearBtn = document.createElement('button');
+      clearBtn.className = 'btn btn-secondary btn-sm';
+      clearBtn.textContent = '清除 Key';
+      clearBtn.addEventListener('click', async function () {
+        if (!window.confirm('确定清除 ' + p.name + ' 的 Key 吗？')) return;
+        var payload = { providers: {} };
+        payload.providers[id] = { key: '__CLEAR__' };
+        var data = await api('/api/admin/config', { method: 'POST', body: JSON.stringify(payload) });
+        if (data.success) {
+          config = data.config;
+          renderProviders();
+          showSaveStatus('已清除');
         }
-      }
-    } catch {
-      showToast('保存失败', 'error');
-    } finally {
-      saveConfigBtn.disabled = false;
-      saveConfigBtn.textContent = '保存配置';
-    }
-  });
-
-  changePasswordBtn.addEventListener('click', async () => {
-    const newPwd = $('#new-password').value;
-    const confirmPwd = $('#confirm-password').value;
-
-    if (!newPwd) {
-      showToast('请输入新密码', 'error');
-      return;
-    }
-    if (newPwd !== confirmPwd) {
-      showToast('两次输入的密码不一致', 'error');
-      return;
-    }
-    if (newPwd.length < 4) {
-      showToast('密码长度至少4位', 'error');
-      return;
-    }
-
-    changePasswordBtn.disabled = true;
-    changePasswordBtn.textContent = '修改中...';
-
-    try {
-      const res = await fetch('/api/admin/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ new_password: newPwd }),
       });
-      const data = await res.json();
-      if (data.success) {
-        showToast('密码已修改，请重新登录', 'success');
-        authToken = '';
-        localStorage.removeItem('admin_token');
-        setTimeout(() => showLogin(), 1500);
-      } else {
-        if (res.status === 401) {
-          handleAuthError();
+      keyGroup.appendChild(clearBtn);
+    }
+    body.appendChild(keyGroup);
+
+    var row = document.createElement('div');
+    row.className = 'form-row';
+    var modelGroup = fieldGroup('模型');
+    var modelInput = document.createElement('input');
+    modelInput.type = 'text';
+    modelInput.id = 'model-' + id;
+    modelInput.value = p.model || '';
+    modelGroup.appendChild(modelInput);
+    row.appendChild(modelGroup);
+    if (id === 'custom') {
+      var baseGroup = fieldGroup('接口地址（以 /v1 结尾）');
+      var baseInput = document.createElement('input');
+      baseInput.type = 'text';
+      baseInput.id = 'base-' + id;
+      baseInput.value = p.base_url || '';
+      baseInput.placeholder = 'https://example.com/v1';
+      baseGroup.appendChild(baseInput);
+      row.appendChild(baseGroup);
+    } else {
+      var baseGroup2 = fieldGroup('接口地址');
+      var baseText = document.createElement('input');
+      baseText.type = 'text';
+      baseText.value = p.base_url || '';
+      baseText.disabled = true;
+      baseGroup2.appendChild(baseText);
+      row.appendChild(baseGroup2);
+    }
+    body.appendChild(row);
+
+    var actions = document.createElement('div');
+    actions.className = 'provider-actions';
+    var testBtn = document.createElement('button');
+    testBtn.className = 'btn btn-secondary btn-sm';
+    testBtn.textContent = '测试连接';
+    var testStatus = document.createElement('span');
+    testStatus.className = 'test-status';
+    testBtn.addEventListener('click', async function () {
+      testBtn.disabled = true;
+      testStatus.textContent = '正在从边缘函数探测...';
+      testStatus.className = 'test-status';
+      try {
+        // Save this provider's fields first so the probe uses what is on
+        // screen, then run the probe.
+        await saveProviders(false);
+        var data = await api('/api/admin/test', {
+          method: 'POST',
+          body: JSON.stringify({ provider: id }),
+        });
+        if (data.ok) {
+          testStatus.textContent = '✓ 连通，' + data.ms + ' ms';
+          testStatus.className = 'test-status ok';
         } else {
-          showToast(data.error || '修改失败', 'error');
+          testStatus.textContent = '✗ ' + (data.error || '不通') + (data.ms ? '（' + data.ms + ' ms）' : '');
+          testStatus.className = 'test-status fail';
         }
+      } catch (err) {
+        testStatus.textContent = '✗ ' + err.message;
+        testStatus.className = 'test-status fail';
+      } finally {
+        testBtn.disabled = false;
       }
-    } catch {
-      showToast('修改失败', 'error');
-    } finally {
-      changePasswordBtn.disabled = false;
-      changePasswordBtn.textContent = '修改密码';
+    });
+    actions.appendChild(testBtn);
+    actions.appendChild(testStatus);
+    body.appendChild(actions);
+    card.appendChild(body);
+    return card;
+  }
+
+  function fieldGroup(label) {
+    var group = document.createElement('div');
+    group.className = 'form-group';
+    var lab = document.createElement('label');
+    lab.textContent = label;
+    group.appendChild(lab);
+    return group;
+  }
+
+  function renderOrder() {
+    orderList.innerHTML = '';
+    order.forEach(function (id, idx) {
+      var row = document.createElement('div');
+      row.className = 'order-item';
+      var name = document.createElement('span');
+      name.textContent = (idx + 1) + '. ' + (config.providers[id] ? config.providers[id].name : id);
+      var up = document.createElement('button');
+      up.className = 'btn btn-secondary btn-sm';
+      up.textContent = '上移';
+      up.disabled = idx === 0;
+      up.addEventListener('click', function () {
+        var t = order[idx - 1];
+        order[idx - 1] = order[idx];
+        order[idx] = t;
+        renderOrder();
+        renderProviders();
+      });
+      var down = document.createElement('button');
+      down.className = 'btn btn-secondary btn-sm';
+      down.textContent = '下移';
+      down.disabled = idx === order.length - 1;
+      down.addEventListener('click', function () {
+        var t = order[idx + 1];
+        order[idx + 1] = order[idx];
+        order[idx] = t;
+        renderOrder();
+        renderProviders();
+      });
+      row.appendChild(name);
+      row.appendChild(up);
+      row.appendChild(down);
+      orderList.appendChild(row);
+    });
+  }
+
+  // ---------- saving ----------
+
+  function collectProviders() {
+    var providers = {};
+    Object.keys(config.providers).forEach(function (id) {
+      var entry = {};
+      var keyInput = document.getElementById('key-' + id);
+      var modelInput = document.getElementById('model-' + id);
+      var baseInput = document.getElementById('base-' + id);
+      if (keyInput && keyInput.value.trim()) entry.key = keyInput.value.trim();
+      if (modelInput) entry.model = modelInput.value.trim();
+      if (baseInput) entry.base_url = baseInput.value.trim();
+      providers[id] = entry;
+    });
+    return providers;
+  }
+
+  async function saveProviders(showStatus) {
+    var data = await api('/api/admin/config', {
+      method: 'POST',
+      body: JSON.stringify({ providers: collectProviders(), order: order }),
+    });
+    if (!data.success) throw new Error(data.error || '保存失败');
+    config = data.config;
+    if (showStatus) showSaveStatus('已保存');
+    return data;
+  }
+
+  $('#save-btn').addEventListener('click', async function () {
+    try {
+      var payload = {
+        providers: collectProviders(),
+        order: order,
+        daily_limit: Number($('#daily-limit-input').value) || 100,
+      };
+      var codeInput = $('#access-code-input');
+      // Only send access_code when the admin typed something or a code was
+      // already set and the field was deliberately cleared after focus.
+      if (codeInput.value.trim() || codeInput.dataset.touched === '1') {
+        payload.access_code = codeInput.value.trim();
+      }
+      var newPassword = $('#new-password-input').value;
+      if (newPassword) payload.new_password = newPassword;
+      var data = await api('/api/admin/config', { method: 'POST', body: JSON.stringify(payload) });
+      if (!data.success) throw new Error(data.error || '保存失败');
+      config = data.config;
+      $('#new-password-input').value = '';
+      renderProviders();
+      showSaveStatus('全部设置已保存');
+      await refreshStats();
+    } catch (err) {
+      showSaveStatus('保存失败：' + err.message);
     }
   });
+  $('#access-code-input').addEventListener('input', function () {
+    this.dataset.touched = '1';
+  });
 
-  function handleAuthError() {
-    authToken = '';
-    localStorage.removeItem('admin_token');
-    showLogin();
-    showToast('登录已过期，请重新登录', 'error');
+  function showSaveStatus(text) {
+    var el = $('#save-status');
+    el.textContent = text;
+    setTimeout(function () { el.textContent = ''; }, 3000);
   }
 
-  function showToast(message, type) {
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  }
+  // ---------- stats ----------
 
-  init();
+  async function refreshStats() {
+    var data = await api('/api/admin/stats');
+    if (data.success) {
+      $('#stat-today').textContent = data.stats.today;
+      $('#stat-total').textContent = data.stats.total;
+      $('#stat-limit').textContent = data.stats.daily_limit;
+    }
+  }
+  $('#refresh-stats-btn').addEventListener('click', refreshStats);
+  $('#reset-stats-btn').addEventListener('click', async function () {
+    if (!window.confirm('确定重置调用统计吗？')) return;
+    await api('/api/admin/stats', { method: 'POST', body: JSON.stringify({ action: 'reset' }) });
+    await refreshStats();
+  });
+
+  // ---------- boot ----------
+
+  if (token()) {
+    enterPanel().catch(function () {
+      logout();
+    });
+  }
 })();

@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>硬件分析师 - 芯片数据手册解析工具</title>
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
   <header class="header">
@@ -37,14 +39,16 @@
             <div class="file-upload-content">
               <span class="file-icon">📄</span>
               <span class="file-text" id="file-name-display">点击或拖拽上传 PDF 文件</span>
-              <span class="file-hint">支持 .pdf 格式</span>
+              <span class="file-hint">支持 .pdf 格式，文本会在本地提取，不上传原文件</span>
             </div>
           </div>
+          <div class="file-meta" id="file-meta" style="display:none;"></div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label for="mcu-input">目标 MCU</label>
             <input type="text" id="mcu-input" placeholder="例如：STM32F103C8T6" value="STM32F103C8T6">
+            <div class="chip-row" id="mcu-chips"></div>
           </div>
           <div class="form-group">
             <label for="language-select">编程语言</label>
@@ -64,6 +68,14 @@
             <span class="spinner"></span> 解析中...
           </span>
         </button>
+      </div>
+
+      <div class="history-card" id="history-card" style="display:none;">
+        <div class="history-header">
+          <h3>历史记录</h3>
+          <button class="btn btn-secondary btn-sm" id="history-clear-btn">清空</button>
+        </div>
+        <div id="history-list"></div>
       </div>
     </section>
 
@@ -88,100 +100,20 @@
             <div class="step-status" id="step-generate-status"></div>
           </div>
         </div>
+        <p class="progress-elapsed">已等待 <span id="elapsed">0</span> 秒，模型生成代码需要一点时间，请勿关闭页面</p>
       </div>
     </section>
 
     <section id="result-section" class="section" style="display:none;">
       <div class="section-header">
         <h2>分析结果</h2>
-        <button class="btn btn-secondary" id="new-analysis-btn">重新分析</button>
-      </div>
-
-      <div class="result-cards">
-        <div class="card" id="card-chip-info">
-          <div class="card-header">
-            <span class="card-icon">🔧</span>
-            <h3>芯片基本信息</h3>
-          </div>
-          <div class="card-body" id="chip-info-body"></div>
-        </div>
-
-        <div class="card" id="card-principle">
-          <div class="card-header">
-            <span class="card-icon">📖</span>
-            <h3>工作原理</h3>
-          </div>
-          <div class="card-body" id="principle-body"></div>
-        </div>
-
-        <div class="card card-code" id="card-driver1">
-          <div class="card-header">
-            <span class="card-icon">⚙️</span>
-            <h3>驱动函数 1</h3>
-            <button class="btn-copy" data-target="driver1-code">复制</button>
-          </div>
-          <div class="card-subheader" id="driver1-desc"></div>
-          <div class="card-body">
-            <div class="code-window">
-              <div class="code-header">
-                <span class="code-dot code-dot-red"></span>
-                <span class="code-dot code-dot-yellow"></span>
-                <span class="code-dot code-dot-green"></span>
-                <span class="code-title" id="driver1-title">driver.c</span>
-              </div>
-              <pre><code id="driver1-code"></code></pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="card card-code" id="card-driver2">
-          <div class="card-header">
-            <span class="card-icon">⚙️</span>
-            <h3>驱动函数 2</h3>
-            <button class="btn-copy" data-target="driver2-code">复制</button>
-          </div>
-          <div class="card-subheader" id="driver2-desc"></div>
-          <div class="card-body">
-            <div class="code-window">
-              <div class="code-header">
-                <span class="code-dot code-dot-red"></span>
-                <span class="code-dot code-dot-yellow"></span>
-                <span class="code-dot code-dot-green"></span>
-                <span class="code-title" id="driver2-title">driver.c</span>
-              </div>
-              <pre><code id="driver2-code"></code></pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="card card-code" id="card-init">
-          <div class="card-header">
-            <span class="card-icon">🚀</span>
-            <h3>初始化代码</h3>
-            <button class="btn-copy" data-target="init-code">复制</button>
-          </div>
-          <div class="card-subheader" id="init-desc"></div>
-          <div class="card-body">
-            <div class="code-window">
-              <div class="code-header">
-                <span class="code-dot code-dot-red"></span>
-                <span class="code-dot code-dot-yellow"></span>
-                <span class="code-dot code-dot-green"></span>
-                <span class="code-title" id="init-title">init.c</span>
-              </div>
-              <pre><code id="init-code"></code></pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" id="card-notes">
-          <div class="card-header">
-            <span class="card-icon">⚠️</span>
-            <h3>使用注意事项</h3>
-          </div>
-          <div class="card-body" id="notes-body"></div>
+        <div class="result-actions">
+          <button class="btn btn-secondary" id="download-btn">下载全部代码</button>
+          <button class="btn btn-secondary" id="new-analysis-btn">重新分析</button>
         </div>
       </div>
+      <div class="result-meta" id="result-meta"></div>
+      <div class="result-cards" id="result-cards"></div>
     </section>
 
     <div id="error-section" class="section" style="display:none;">
@@ -189,13 +121,14 @@
         <span class="error-icon">❌</span>
         <h3>分析失败</h3>
         <p id="error-message"></p>
-        <button class="btn btn-secondary" id="retry-btn">重试</button>
+        <div class="error-detail" id="error-detail"></div>
+        <button class="btn btn-secondary" id="retry-btn">返回重试</button>
       </div>
     </div>
   </main>
 
   <footer class="footer">
-    <p>硬件分析师 &copy; 2026 | 基于 EdgeOne Pages + OpenRouter 构建</p>
+    <p>硬件分析师 &copy; 2026 | 基于 EdgeOne Pages + 多模型 API 构建</p>
   </footer>
 
   <div id="contact-modal" class="modal-overlay" style="display:none;">

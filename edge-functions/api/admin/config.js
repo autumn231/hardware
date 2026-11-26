@@ -1,92 +1,117 @@
-function getCorsHeaders() {
+import { handleOptions, jsonResponse, kvAvailable, KV_MISSING_MESSAGE } from '../../_shared/http.js';
+import {
+  loadConfig,
+  saveConfig,
+  verifySession,
+  setAdminPassword,
+  PROVIDER_IDS,
+} from '../../_shared/store.js';
+import { PROVIDERS } from '../../_shared/providers.js';
+
+function maskKey(key) {
+  if (!key) return '';
+  if (key.length <= 10) return '****';
+  return key.slice(0, 6) + '****' + key.slice(-4);
+}
+
+function publicConfig(cfg) {
+  const providers = {};
+  for (const id of PROVIDER_IDS) {
+    const p = cfg.providers[id] || {};
+    providers[id] = {
+      name: PROVIDERS[id].name,
+      key_set: !!p.key,
+      key_masked: maskKey(p.key),
+      model: p.model || PROVIDERS[id].defaultModel,
+      base_url: id === 'custom' ? p.base_url || '' : PROVIDERS[id].baseUrl,
+      key_hint: PROVIDERS[id].keyHint,
+    };
+  }
   return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    providers,
+    order: cfg.order,
+    daily_limit: cfg.daily_limit,
+    access_code_set: !!cfg.access_code,
   };
 }
 
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-      ...getCorsHeaders(),
-    },
-  });
-}
-
-async function verifyToken(request) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return false;
-  }
-  const token = authHeader.substring(7);
-  const storedToken = await AI_HARDWARE_TOOL.get('session_token');
-  return token === storedToken;
-}
-
 export async function onRequest(context) {
-  if (context.request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: getCorsHeaders() });
+  const preflight = handleOptions(context.request);
+  if (preflight) return preflight;
+
+  if (!kvAvailable()) {
+    return jsonResponse({ success: false, error: KV_MISSING_MESSAGE }, 503);
   }
 
-  if (typeof AI_HARDWARE_TOOL === 'undefined') {
-    return jsonResponse({ success: false, error: 'KV 存储未绑定，请在 EdgeOne Pages 控制台绑定 KV 命名空间后重新部署' }, 503);
-  }
-
-  const authenticated = await verifyToken(context.request);
+  const authenticated = await verifySession(context.request);
   if (!authenticated) {
     return jsonResponse({ success: false, error: '未授权，请重新登录' }, 401);
   }
 
   try {
     if (context.request.method === 'GET') {
-      const apiKey = await AI_HARDWARE_TOOL.get('api_key');
-      const model = await AI_HARDWARE_TOOL.get('model') || 'openai/gpt-4o';
-      const dailyLimit = await AI_HARDWARE_TOOL.get('daily_limit') || '100';
-
-      const maskedKey = apiKey
-        ? apiKey.substring(0, 6) + '****' + apiKey.substring(apiKey.length - 4)
-        : '';
-
-      return jsonResponse({
-        success: true,
-        config: {
-          api_key_set: !!apiKey,
-          api_key_masked: maskedKey,
-          model,
-          daily_limit: Number(dailyLimit),
-        },
-      });
+      const cfg = await loadConfig();
+      return jsonResponse({ success: true, config: publicConfig(cfg) });
     }
 
     if (context.request.method === 'POST') {
       const body = await context.request.json();
-      const updates = [];
+      const cfg = await loadConfig();
+      const updated = [];
 
-      if (body.api_key !== undefined) {
-        await AI_HARDWARE_TOOL.put('api_key', body.api_key);
-        updates.push('api_key');
-      }
-      if (body.model !== undefined) {
-        await AI_HARDWARE_TOOL.put('model', body.model);
-        updates.push('model');
-      }
-      if (body.daily_limit !== undefined) {
-        await AI_HARDWARE_TOOL.put('daily_limit', String(body.daily_limit));
-        updates.push('daily_limit');
-      }
-      if (body.new_password !== undefined && body.new_password.length > 0) {
-        await AI_HARDWARE_TOOL.put('admin_password', body.new_password);
-        updates.push('admin_password');
+      if (body.providers && typeof body.providers === 'object') {
+        for (const id of PROVIDER_IDS) {
+          const incoming = body.providers[id];
+          if (!incoming || typeof incoming !== 'object') continue;
+          const target = cfg.providers[id];
+          // An empty key field means "leave unchanged" so the admin UI never
+          // has to send the real key back. The literal value "__CLEAR__"
+          // removes a stored key.
+          if (typeof incoming.key === 'string') {
+            if (incoming.key === '__CLEAR__') {
+              target.key = '';
+              updated.push(`${id}.key`);
+            } else if (incoming.key.length > 0) {
+              target.key = incoming.key;
+              updated.push(`${id}.key`);
+            }
+          }
+          if (typeof incoming.model === 'string') {
+            target.model = incoming.model.trim();
+            updated.push(`${id}.model`);
+          }
+          if (id === 'custom' && typeof incoming.base_url === 'string') {
+            target.base_url = incoming.base_url.trim();
+            updated.push('custom.base_url');
+          }
+        }
       }
 
-      return jsonResponse({ success: true, updated: updates });
+      if (Array.isArray(body.order)) {
+        cfg.order = body.order;
+        updated.push('order');
+      }
+      if (body.daily_limit !== undefined && Number(body.daily_limit) > 0) {
+        cfg.daily_limit = Number(body.daily_limit);
+        updated.push('daily_limit');
+      }
+      if (typeof body.access_code === 'string') {
+        cfg.access_code = body.access_code.trim();
+        updated.push('access_code');
+      }
+
+      await saveConfig(cfg);
+
+      if (typeof body.new_password === 'string' && body.new_password.length > 0) {
+        await setAdminPassword(body.new_password);
+        updated.push('admin_password');
+      }
+
+      return jsonResponse({ success: true, updated, config: publicConfig(cfg) });
     }
 
     return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
   } catch (err) {
-    return jsonResponse({ success: false, error: `服务器错误: ${err.message}` }, 500);
+    return jsonResponse({ success: false, error: `服务器错误：${err.message}` }, 500);
   }
 }
