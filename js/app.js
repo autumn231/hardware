@@ -328,7 +328,11 @@ if (err.name === 'AbortError') {
 showToast('已取消分析', 'error');
 showSection('upload');
 } else {
+if (err.name === 'TypeError' || /failed to fetch|networkerror/i.test(err.message || '')) {
+showError(new Error('网络连接中断，分析未完成，请检查网络后重试'));
+} else {
 showError(err);
+}
 }
 } finally {
 analyzeAbort = null;

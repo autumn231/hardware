@@ -12,6 +12,14 @@ export const PROVIDERS = {
     // The Makers gateway implements no GET /models (404 Invalid request
     // path), so the connectivity probe must use a minimal chat call.
     probeViaChat: true,
+    // The gateway severs streaming responses at ~20 s (verified
+    // 2026-11-26: a user run and a sandbox repro both cut at 19-20 s
+    // while OpenRouter streams ran up to 195 s through the same stack),
+    // and the severing kills the whole edge function, leaving no chance
+    // for fallback or an error event. Makers is therefore called
+    // non-streamed (long timeout) inside the SSE response instead,
+    // with heartbeats keeping the client leg alive.
+    pseudoStream: true,
     // Built-in model catalogue (official Makers list, 2026-11-26). The
     // admin UI renders this as a dropdown. No per-model rate annotation:
     // the gateway never returns its official quota deduction (verified
@@ -95,8 +103,9 @@ function buildRequest(id, providerCfg, messages, request, opts) {
 // wants JSON mode where the preset supports it.
 export async function callProvider(id, providerCfg, messages, request, opts) {
   const { url, headers, body, model, preset } = buildRequest(id, providerCfg, messages, request, opts);
+  const timeoutMs = (opts && opts.timeoutMs) || CALL_TIMEOUT_MS;
   const send = (payload) =>
-    fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(payload) }, CALL_TIMEOUT_MS);
+    fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(payload) }, timeoutMs);
 
   let res;
   try {
@@ -109,7 +118,7 @@ export async function callProvider(id, providerCfg, messages, request, opts) {
     }
   } catch (e) {
     if (e && e.name === 'AbortError') {
-      throw new Error(`${preset.name} 请求超时（${CALL_TIMEOUT_MS / 1000} 秒）`);
+      throw new Error(`${preset.name} 请求超时（${timeoutMs / 1000} 秒）`);
     }
     throw new Error(`${preset.name} 网络连不上：${(e && e.message) || e}`);
   }
@@ -172,7 +181,9 @@ export async function streamChatWithFallback(cfg, messages, request, onEvent) {
     }
     const started = Date.now();
     try {
-      const result = await streamProvider(id, providerCfg, messages, request, onEvent);
+      const result = PROVIDERS[id].pseudoStream
+        ? await pseudoStreamProvider(id, providerCfg, messages, request, onEvent)
+        : await streamProvider(id, providerCfg, messages, request, onEvent);
       attempts.push({ provider: id, ok: true, ms: Date.now() - started });
       return { ...result, attempts };
     } catch (e) {
@@ -187,6 +198,37 @@ export async function streamChatWithFallback(cfg, messages, request, onEvent) {
   const err = new Error('所有已配置的供应商都调用失败');
   err.attempts = attempts;
   throw err;
+}
+
+// Pseudo-streaming for providers whose real streams are unreliable:
+// one non-streamed call with a long timeout, heartbeats to keep the
+// client connection warm, and the full content as a single delta at
+// the end. If the call fails the error is catchable here, so the
+// fallback chain still works — unlike a severed real stream, which
+// takes the whole function down with it.
+async function pseudoStreamProvider(id, providerCfg, messages, request, onEvent) {
+  const preset = PROVIDERS[id];
+  onEvent({ type: 'provider', provider: id, model: providerCfg.model || preset.defaultModel });
+  const heartbeat = setInterval(() => {
+    try {
+      onEvent({ type: 'heartbeat' });
+    } catch (e) {
+      // event sink is best-effort
+    }
+  }, 5000);
+  try {
+    const { content, model, usage, officialUsage } = await callProvider(
+      id,
+      providerCfg,
+      messages,
+      request,
+      { timeoutMs: 240000 }
+    );
+    onEvent({ type: 'delta', chars: content.length, tail: content.slice(-400) });
+    return { content, provider: id, model, usage, officialUsage };
+  } finally {
+    clearInterval(heartbeat);
+  }
 }
 
 async function streamProvider(id, providerCfg, messages, request, onEvent) {

@@ -32,7 +32,8 @@ async function parseAndRepair(cfg, first, request) {
         first.provider,
         cfg.providers[first.provider],
         buildRepairMessages(first.content),
-        request
+        request,
+        { timeoutMs: 120000 }
       );
       parsed = extractJson(fix.content);
       repaired = !!parsed;
@@ -206,6 +207,8 @@ export async function onRequest(context) {
               send({ type: 'provider', provider: evt.provider, model: evt.model });
             } else if (evt.type === 'delta') {
               send({ type: 'delta', chars: evt.chars, tail: evt.tail });
+            } else if (evt.type === 'heartbeat') {
+              send({ type: 'heartbeat' });
             }
           });
           const { result, meta } = await finalizeSuccess(cfg, first, started, context.request, cacheKey, ipHash, { truncated });
@@ -240,7 +243,7 @@ export async function onRequest(context) {
   }
   const started = Date.now();
   try {
-    const first = await chatWithFallback(cfg, messages, context.request);
+    const first = await chatWithFallback(cfg, messages, context.request, { timeoutMs: 240000 });
     const { result, meta } = await finalizeSuccess(cfg, first, started, context.request, cacheKey, ipHash, { truncated });
     return jsonResponse({ success: true, result, meta });
   } catch (err) {
