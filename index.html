@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>硬件分析师 - 芯片数据手册解析工具</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23f7b731' d='M13 2L4 14h6l-1 8 9-12h-6z'/></svg>">
+  <script>(function(){try{var t=localStorage.getItem('hw-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -19,6 +20,7 @@
         <span class="logo-sub">LAB-01 · DATASHEET ANALYZER</span>
       </div>
       <nav class="nav">
+        <button id="theme-toggle" class="theme-toggle" type="button">◐ 浅色面板</button>
         <a href="/" class="nav-link active">分析工具</a>
         <a href="/admin.html" class="nav-link">管理后台</a>
         <a href="javascript:void(0)" class="nav-link" id="contact-btn">联系我们</a>
@@ -56,7 +58,7 @@
           </div>
           <div class="form-group">
             <label for="language-select">编程语言</label>
-            <select id="language-select">
+            <select id="language-select" class="select-upgrade">
               <option value="C">C 语言</option>
               <option value="Arduino">Arduino</option>
               <option value="STM32 HAL">STM32 HAL</option>
@@ -180,6 +182,7 @@
     </div>
   </div>
 
+  <script src="/js/ui.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

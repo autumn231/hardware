@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理后台 - 硬件分析师</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23f7b731' d='M13 2L4 14h6l-1 8 9-12h-6z'/></svg>">
+  <script>(function(){try{var t=localStorage.getItem('hw-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -16,6 +17,7 @@
         <span class="logo-sub">LAB-01 · 管理后台</span>
       </div>
       <nav class="nav">
+        <button id="theme-toggle" class="theme-toggle" type="button">◐ 浅色面板</button>
         <a href="/" class="nav-link">分析工具</a>
         <a href="/admin.html" class="nav-link active">管理后台</a>
       </nav>
@@ -113,6 +115,7 @@
     <p>硬件分析师 &copy; 2026 | 基于 EdgeOne Pages + 多模型 API 构建</p>
   </footer>
 
+  <script src="/js/ui.js"></script>
   <script src="/js/admin.js"></script>
 </body>
 </html>
