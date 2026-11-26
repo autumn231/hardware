@@ -9,6 +9,9 @@ export const PROVIDERS = {
     baseUrl: 'https://ai-gateway.edgeone.link/v1',
     defaultModel: '@makers/deepseek-v4-flash',
     jsonMode: true,
+    // The Makers gateway implements no GET /models (404 Invalid request
+    // path), so the connectivity probe must use a minimal chat call.
+    probeViaChat: true,
     extraBody: {},
     keyHint: '在 EdgeOne 控制台 Makers → Models → API Key 创建的密钥',
   },
@@ -258,11 +261,29 @@ export async function probeProvider(id, providerCfg) {
   if (!providerCfg || !providerCfg.key) return { ok: false, error: '未配置 API Key' };
   const started = Date.now();
   try {
-    const res = await fetchWithTimeout(
-      `${baseUrl}/models`,
-      { method: 'GET', headers: { Authorization: `Bearer ${providerCfg.key}` } },
-      15000
-    );
+    const res = preset.probeViaChat
+      ? await fetchWithTimeout(
+          `${baseUrl}/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${providerCfg.key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: providerCfg.model || preset.defaultModel,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 1,
+              stream: false,
+            }),
+          },
+          15000
+        )
+      : await fetchWithTimeout(
+          `${baseUrl}/models`,
+          { method: 'GET', headers: { Authorization: `Bearer ${providerCfg.key}` } },
+          15000
+        );
     const ms = Date.now() - started;
     if (res.ok) return { ok: true, ms };
     const errText = await res.text();
