@@ -54,6 +54,13 @@ async function finalizeSuccess(cfg, first, started, request, cacheKey, ipHash, e
     ...(extraMeta || {}),
   };
   const result = parsed ? normalizeResult(parsed) : { raw_content: first.content };
+  // A parseable answer with no driver code at all is a degraded result
+  // (weak model or truncated output). Flag it so the UI can warn instead
+  // of presenting a hollow success.
+  meta.degraded =
+    !parsed ||
+    ((result.driver_functions || []).length === 0 &&
+      !(result.initialization && result.initialization.code));
   await incrementCallCount();
   await incrementIpCount(ipHash);
   for (const attempt of first.attempts) {

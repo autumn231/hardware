@@ -435,6 +435,12 @@ parts.push('长手册智能取段：共 ' + meta.totalPages + ' 页，选用了 
 if (meta && meta.repaired) parts.push('模型输出经过一次 JSON 修复');
 resultMeta.textContent = parts.join('　|　');
 resultMeta.style.display = parts.length? '': 'none';
+    if (meta && meta.degraded) {
+      var warn = document.createElement('div');
+      warn.className = 'result-meta-note';
+      warn.textContent = '本次生成不完整：模型未返回驱动代码，可能是模型能力不足或输出被截断。建议重试，或在管理后台更换更强的模型。';
+      resultMeta.appendChild(warn);
+    }
 if (meta && meta.attempts && meta.attempts.some(function (a) { return!a.ok;})) {
 var failed = meta.attempts
 .filter(function (a) { return!a.ok;})
