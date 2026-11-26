@@ -224,61 +224,13 @@
     });
     actions.appendChild(testBtn);
     actions.appendChild(testStatus);
-    var ratesBox = null;
-    if (Array.isArray(p.models) && p.models.length) {
-      var ratesBtn = document.createElement('button');
-      ratesBtn.className = 'btn btn-secondary btn-sm';
-      ratesBtn.textContent = '实测倍率';
-      ratesBox = document.createElement('div');
-      ratesBox.className = 'rates-box';
-      ratesBtn.addEventListener('click', async function () {
-        ratesBtn.disabled = true;
-        ratesBox.textContent = '正在逐个模型发测试请求（每个模型一条，约十几秒）...';
-        try {
-          await saveProviders(false);
-          var data = await api('/api/admin/model-rates', {
-            method: 'POST',
-            body: JSON.stringify({ provider: id }),
-          });
-          if (!data.success) throw new Error(data.error || '测量失败');
-          renderRates(ratesBox, data.results || [], modelInput, p);
-        } catch (err) {
-          ratesBox.textContent = '测量失败：' + err.message;
-        } finally {
-          ratesBtn.disabled = false;
-        }
-      });
-      actions.appendChild(ratesBtn);
-    }
     body.appendChild(actions);
-    if (ratesBox) body.appendChild(ratesBox);
     card.appendChild(body);
     return card;
   }
 
   function modelOptionLabel(m) {
-    var label = m.label || m.id;
-    if (typeof m.rate === 'number') label += '（倍率 ×' + m.rate + '）';
-    return label;
-  }
-
-  function renderRates(box, results, select, p) {
-    var byId = {};
-    results.forEach(function (r) { byId[r.id] = r; });
-    if (select && select.tagName === 'SELECT') {
-      Array.prototype.forEach.call(select.options, function (opt) {
-        var r = byId[opt.value];
-        var m = (p.models || []).filter(function (x) { return x.id === opt.value; })[0];
-        if (r && r.ok && m) {
-          opt.textContent = (m.label || m.id) + '（倍率 ×' + r.rate + '）';
-        }
-      });
-    }
-    box.textContent = results.map(function (r) {
-      if (!r.ok) return r.id + '：失败（' + (r.error || '未知错误') + '）';
-      return r.id + '：倍率 ×' + r.rate +
-        '（官方扣减 ' + r.official_tokens + ' / 实际 ' + r.total_tokens + ' tokens）';
-    }).join('\n');
+    return m.label || m.id;
   }
 
   function fieldGroup(label) {
