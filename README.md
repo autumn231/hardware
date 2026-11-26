@@ -59,6 +59,7 @@ hardware/
 | 边缘运行时 | EdgeOne Edge Functions |
 | 数据存储 | EdgeOne Pages KV（绑定名 `AI_HARDWARE_TOOL`） |
 | 前端 | 原生 HTML + CSS + JavaScript，PDF.js 提取文本，highlight.js 代码高亮 |
+| 视觉设计 | 「示波器 LAB-01」主题：磷光绿读数、仪器面板、实体按键质感（深色） |
 | AI 引擎 | OpenAI 兼容接口：SenseNova / DeepSeek / Gemini / OpenRouter / 自定义 |
 
 ## 部署步骤

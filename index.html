@@ -14,9 +14,9 @@
   <header class="header">
     <div class="header-inner">
       <div class="logo">
-        <span class="logo-icon">⚡</span>
+        <span class="led"></span>
         <span class="logo-text">硬件分析师</span>
-        <span class="logo-sub">Hardware Data Sheet Analyzer</span>
+        <span class="logo-sub">LAB-01 · DATASHEET ANALYZER</span>
       </div>
       <nav class="nav">
         <a href="/" class="nav-link active">分析工具</a>
@@ -29,10 +29,13 @@
   <main class="main">
     <section id="upload-section" class="section">
       <div class="section-header">
+        <p class="kicker">CH1 · DATASHEET INPUT · READY</p>
         <h2>上传数据手册</h2>
         <p>上传硬件芯片数据手册 PDF，自动解析生成驱动代码</p>
       </div>
       <div class="upload-card">
+        <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+        <svg class="wave" viewBox="0 0 600 34" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,17 90,17 105,17 115,4 130,30 145,17 240,17 255,17 265,4 280,30 295,17 420,17 435,17 445,4 460,30 475,17 600,17" fill="none" stroke="#4ade80" stroke-width="1.6" opacity="0.6"/></svg>
         <div class="form-group">
           <label for="pdf-file">数据手册 PDF</label>
           <div class="file-upload" id="file-drop-zone">
@@ -82,6 +85,7 @@
 
     <section id="progress-section" class="section" style="display:none;">
       <div class="progress-card">
+        <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
         <div class="progress-steps">
           <div class="step" id="step-extract">
             <div class="step-icon">1</div>
@@ -114,6 +118,7 @@
 
     <section id="result-section" class="section" style="display:none;">
       <div class="section-header">
+        <p class="kicker">CH2 · ANALYSIS OUTPUT</p>
         <h2>分析结果</h2>
         <div class="result-actions">
           <button class="btn btn-secondary" id="download-btn">下载全部代码</button>
