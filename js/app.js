@@ -31,7 +31,10 @@ var pdfFileName = '';
 var pdfTotalChars = 0;
 var currentResult = null;
 var currentMeta = null;
+var lastPayloadText = '';
+var chatHistory = [];
 var elapsedTimer = null;
+var analyzeAbort = null;
 
 var MCU_PRESETS = ['STM32F103C8T6', 'STM32F407VET6', 'STM32H743', 'ESP32-S3', 'GD32F103C8', 'CH32V307', 'ATmega328P', 'RP2040'];
 var chipRow = $('#mcu-chips');
@@ -160,12 +163,102 @@ ordered.map(function (i) { return i + 1;}).join(', ') + '）\n\n';
 return { text: header + parts.join('\n\n'), excerpted: true, includedPages: ordered.length};
 }
 
+// ---------- API helpers ----------
+
+function authHeaders(extra) {
+var headers = { 'Content-Type': 'application/json'};
+var code = sessionStorage.getItem(ACCESS_CODE_KEY);
+if (code) headers['X-Access-Code'] = code;
+return Object.assign(headers, extra || {});
+}
+
+function askAccessCode() {
+var entered = window.prompt('该站点已开启访问口令，请输入口令');
+if (entered) sessionStorage.setItem(ACCESS_CODE_KEY, entered);
+return!!entered;
+}
+
+async function postJson(path, body, retried) {
+var res = await fetch(path, {
+method: 'POST',
+headers: authHeaders(),
+body: JSON.stringify(body),
+});
+var data = await res.json().catch(function () { return null;});
+if (data && data.need_access_code &&!retried) {
+if (askAccessCode()) return postJson(path, body, true);
+throw new Error('需要访问口令才能使用');
+}
+if (!data ||!data.success) {
+var err = new Error((data && data.error) || '请求失败');
+err.attempts = data && data.attempts;
+throw err;
+}
+return data;
+}
+
+// Streaming analyze over SSE. Resolves with { result, meta} on the done
+// event, rejects with an Error (carrying attempts) on the error event.
+function streamAnalyze(body, onProgress, signal, retried) {
+return fetch('/api/analyze', {
+method: 'POST',
+headers: authHeaders(),
+body: JSON.stringify(Object.assign({}, body, { stream: true})),
+signal: signal,
+}).then(async function (res) {
+var contentType = res.headers.get('Content-Type') || '';
+if (!contentType.includes('text/event-stream')) {
+// Gate errors (access code, quota) come back as plain JSON.
+var data = await res.json().catch(function () { return null;});
+if (data && data.need_access_code &&!retried) {
+if (askAccessCode()) return streamAnalyze(body, onProgress, signal, true);
+throw new Error('需要访问口令才能使用分析功能');
+}
+var err = new Error((data && data.error) || '分析请求失败');
+err.attempts = data && data.attempts;
+        err.noFallback = true;
+throw err;
+}
+var reader = res.body.getReader();
+var decoder = new TextDecoder();
+var buffer = '';
+while (true) {
+var chunk = await reader.read();
+if (chunk.done) break;
+buffer += decoder.decode(chunk.value, { stream: true});
+var blocks = buffer.split('\n\n');
+buffer = blocks.pop() || '';
+for (var block of blocks) {
+var line = block.split('\n').find(function (l) { return l.startsWith('data:');});
+if (!line) continue;
+var evt;
+try { evt = JSON.parse(line.slice(5).trim());} catch (e) { continue;}
+if (evt.type === 'provider' || evt.type === 'delta') {
+onProgress(evt);
+} else if (evt.type === 'done') {
+return { result: evt.result, meta: evt.meta};
+} else if (evt.type === 'error') {
+var err2 = new Error(evt.error || '分析失败');
+err2.attempts = evt.attempts;
+            err2.noFallback = true;
+throw err2;
+}
+}
+}
+throw new Error('连接中断，未收到分析结果');
+});
+}
+
 // ---------- analysis flow ----------
 
 analyzeBtn.addEventListener('click', startAnalysis);
 $('#new-analysis-btn').addEventListener('click', resetView);
 $('#retry-btn').addEventListener('click', resetView);
 $('#download-btn').addEventListener('click', downloadAllCode);
+$('#report-btn').addEventListener('click', downloadReport);
+$('#cancel-btn').addEventListener('click', function () {
+if (analyzeAbort) analyzeAbort.abort();
+});
 
 async function startAnalysis() {
 if (!pageTexts.length) {
@@ -178,13 +271,30 @@ if (!mcu) {
 showToast('请输入目标 MCU', 'error');
 return;
 }
+var payload = buildPayloadText();
+lastPayloadText = payload.text;
+chatHistory = [];
+$('#chat-log').innerHTML = '';
 showSection('progress');
 setStepState('extract', 'done');
 setStepState('analyze', 'active');
+resetStreamUi();
 startElapsed();
+analyzeAbort = new AbortController();
 try {
-var payload = buildPayloadText();
-var data = await callAnalyzeApi(payload.text, mcu, language, false);
+var data;
+try {
+data = await streamAnalyze(
+{ text: payload.text, mcu: mcu, language: language},
+onStreamProgress,
+analyzeAbort.signal,
+false
+);
+} catch (streamErr) {
+if (streamErr.name === 'AbortError' || streamErr.noFallback) throw streamErr;
+// Streaming transport failed outright: fall back to the plain call.
+data = await postJson('/api/analyze', { text: payload.text, mcu: mcu, language: language}, false);
+}
 setStepState('analyze', 'done');
 setStepState('generate', 'done');
 stopElapsed();
@@ -200,34 +310,35 @@ saveHistory(mcu, language);
 showSection('result');
 } catch (err) {
 stopElapsed();
+if (err.name === 'AbortError') {
+showToast('已取消分析', 'error');
+showSection('upload');
+} else {
 showError(err);
+}
+} finally {
+analyzeAbort = null;
 }
 }
 
-async function callAnalyzeApi(text, mcu, language, retried) {
-var headers = { 'Content-Type': 'application/json'};
-var code = sessionStorage.getItem(ACCESS_CODE_KEY);
-if (code) headers['X-Access-Code'] = code;
-var res = await fetch('/api/analyze', {
-method: 'POST',
-headers: headers,
-body: JSON.stringify({ text: text, mcu: mcu, language: language}),
-});
-var data = await res.json().catch(function () { return null;});
-if (data && data.need_access_code &&!retried) {
-var entered = window.prompt('该站点已开启访问口令，请输入口令');
-if (entered) {
-sessionStorage.setItem(ACCESS_CODE_KEY, entered);
-return callAnalyzeApi(text, mcu, language, true);
+function resetStreamUi() {
+$('#stream-stats').textContent = '';
+$('#stream-preview').textContent = '';
+$('#stream-preview-wrap').style.display = 'none';
 }
-throw new Error('需要访问口令才能使用分析功能');
+
+function onStreamProgress(evt) {
+var stats = $('#stream-stats');
+if (evt.type === 'provider') {
+stats.textContent = '，' + (PROVIDER_NAMES[evt.provider] || evt.provider) + ' 正在生成';
+} else if (evt.type === 'delta') {
+stats.textContent = '，已生成 ' + evt.chars.toLocaleString() + ' 字符';
+var wrap = $('#stream-preview-wrap');
+wrap.style.display = '';
+var preview = $('#stream-preview');
+preview.textContent = evt.tail || '';
+preview.scrollTop = preview.scrollHeight;
 }
-if (!data ||!data.success) {
-var err = new Error((data && data.error) || '分析请求失败');
-err.attempts = data && data.attempts;
-throw err;
-}
-return data;
 }
 
 function startElapsed() {
@@ -258,6 +369,7 @@ custom: '自定义服务',
 function renderResult(result, meta) {
 resultCards.innerHTML = '';
 renderMeta(meta);
+$('#chat-card').style.display = result? '': 'none';
 if (!result) return;
 if (result.raw_content) {
 resultCards.appendChild(textCard('📄', '模型原始输出', result.raw_content));
@@ -266,6 +378,16 @@ return;
 if (result.chip_info) resultCards.appendChild(chipInfoCard(result.chip_info));
 if (result.working_principle) {
 resultCards.appendChild(textCard('📖', '工作原理', result.working_principle));
+}
+if (result.pins && result.pins.length) {
+resultCards.appendChild(tableCard('📌', '引脚定义', ['引脚', '信号名', '功能'], result.pins.map(function (p) {
+return [p.pin, p.name, p.function];
+})));
+}
+if (result.registers && result.registers.length) {
+resultCards.appendChild(tableCard('🗂️', '寄存器速查', ['寄存器', '地址', '功能', '复位值'], result.registers.map(function (r) {
+return [r.name, r.address || '-', r.description, r.reset_value || '-'];
+})));
 }
 var language = languageSelect.value;
 var ext = EXT_MAP[language] || '.c';
@@ -301,7 +423,9 @@ try { window.hljs.highlightElement(el);} catch (e) { /* plain text fallback */}
 
 function renderMeta(meta) {
 var parts = [];
-if (meta && meta.provider) {
+if (meta && meta.cached) {
+parts.push('命中缓存（7 天内相同手册与配置），即时返回，未消耗调用额度');
+} else if (meta && meta.provider) {
 parts.push('由 ' + (PROVIDER_NAMES[meta.provider] || meta.provider) + ' · ' + (meta.model || '') + ' 生成');
 }
 if (meta && meta.ms) parts.push('耗时 ' + (meta.ms / 1000).toFixed(1) + ' 秒');
@@ -353,6 +477,48 @@ item.appendChild(value);
 grid.appendChild(item);
 });
 body.appendChild(grid);
+card.appendChild(body);
+return card;
+}
+
+function tableCard(icon, title, headers, rows) {
+var card = document.createElement('div');
+card.className = 'card';
+var header = document.createElement('div');
+header.className = 'card-header';
+var iconSpan = document.createElement('span');
+iconSpan.className = 'card-icon';
+iconSpan.textContent = icon;
+var h3 = document.createElement('h3');
+h3.textContent = title;
+header.appendChild(iconSpan);
+header.appendChild(h3);
+card.appendChild(header);
+var body = document.createElement('div');
+body.className = 'card-body';
+var table = document.createElement('table');
+table.className = 'data-table';
+var thead = document.createElement('thead');
+var trh = document.createElement('tr');
+headers.forEach(function (h) {
+var th = document.createElement('th');
+th.textContent = h;
+trh.appendChild(th);
+});
+thead.appendChild(trh);
+table.appendChild(thead);
+var tbody = document.createElement('tbody');
+rows.forEach(function (row) {
+var tr = document.createElement('tr');
+row.forEach(function (cell) {
+var td = document.createElement('td');
+td.textContent = cell || '';
+tr.appendChild(td);
+});
+tbody.appendChild(tr);
+});
+table.appendChild(tbody);
+body.appendChild(table);
 card.appendChild(body);
 return card;
 }
@@ -433,6 +599,22 @@ card.appendChild(body);
 return card;
 }
 
+// ---------- downloads ----------
+
+function downloadBlob(content, filename, type) {
+var blob = new Blob([content], { type: type || 'text/plain;charset=utf-8'});
+var url = URL.createObjectURL(blob);
+var a = document.createElement('a');
+a.href = url;
+a.download = filename;
+a.click();
+setTimeout(function () { URL.revokeObjectURL(url);}, 1000);
+}
+
+function safeName(name) {
+return (name || 'driver').replace(/[\\/:*?"<>|]/g, '_');
+}
+
 function downloadAllCode() {
 if (!currentResult) return;
 var language = languageSelect.value;
@@ -449,13 +631,85 @@ if (!chunks.length) {
 showToast('没有可下载的代码', 'error');
 return;
 }
-var blob = new Blob([chunks.join('\n\n')], { type: 'text/plain;charset=utf-8'});
-var url = URL.createObjectURL(blob);
-var a = document.createElement('a');
-a.href = url;
-a.download = chip.replace(/[\\/:*?"<>|]/g, '_') + '_driver' + ext;
-a.click();
-setTimeout(function () { URL.revokeObjectURL(url);}, 1000);
+downloadBlob(chunks.join('\n\n'), safeName(chip) + '_driver' + ext);
+}
+
+function downloadReport() {
+if (!currentResult) return;
+var r = currentResult;
+var language = languageSelect.value;
+var lines = [];
+var chip = (r.chip_info && r.chip_info.model) || '芯片';
+lines.push('# ' + chip + ' 数据手册分析报告');
+lines.push('');
+lines.push('- 目标 MCU：' + mcuInput.value.trim());
+lines.push('- 编程语言：' + language);
+if (currentMeta && currentMeta.provider) {
+lines.push('- 生成模型：' + (PROVIDER_NAMES[currentMeta.provider] || currentMeta.provider) + ' · ' + (currentMeta.model || ''));
+}
+lines.push('');
+if (r.chip_info) {
+lines.push('## 芯片基本信息');
+lines.push('');
+lines.push('| 项目 | 内容 |');
+lines.push('| --- | --- |');
+lines.push('| 型号 | ' + (r.chip_info.model || '-') + ' |');
+lines.push('| 用途 | ' + (r.chip_info.purpose || '-') + ' |');
+lines.push('| 供电 | ' + (r.chip_info.power_supply || '-') + ' |');
+lines.push('| 温度范围 | ' + (r.chip_info.temperature_range || '-') + ' |');
+lines.push('| 通信方式 | ' + (r.chip_info.communication || '-') + ' |');
+lines.push('| 引脚说明 | ' + (r.chip_info.pin_description || '-') + ' |');
+lines.push('');
+}
+if (r.working_principle) {
+lines.push('## 工作原理');
+lines.push('');
+lines.push(r.working_principle);
+lines.push('');
+}
+if (r.pins && r.pins.length) {
+lines.push('## 引脚定义');
+lines.push('');
+lines.push('| 引脚 | 信号名 | 功能 |');
+lines.push('| --- | --- | --- |');
+r.pins.forEach(function (p) { lines.push('| ' + p.pin + ' | ' + p.name + ' | ' + p.function + ' |');});
+lines.push('');
+}
+if (r.registers && r.registers.length) {
+lines.push('## 寄存器速查');
+lines.push('');
+lines.push('| 寄存器 | 地址 | 功能 | 复位值 |');
+lines.push('| --- | --- | --- | --- |');
+r.registers.forEach(function (reg) {
+lines.push('| ' + reg.name + ' | ' + (reg.address || '-') + ' | ' + reg.description + ' | ' + (reg.reset_value || '-') + ' |');
+});
+lines.push('');
+}
+(r.driver_functions || []).forEach(function (fn, idx) {
+lines.push('## 驱动函数 ' + (idx + 1) + '：' + (fn.name || ''));
+lines.push('');
+if (fn.description) { lines.push(fn.description); lines.push('');}
+lines.push('```c');
+lines.push(unescapeCode(fn.code || ''));
+lines.push('```');
+lines.push('');
+});
+if (r.initialization && r.initialization.code) {
+lines.push('## 初始化代码');
+lines.push('');
+if (r.initialization.description) { lines.push(r.initialization.description); lines.push('');}
+lines.push('```c');
+lines.push(unescapeCode(r.initialization.code));
+lines.push('```');
+lines.push('');
+}
+if (r.usage_notes && r.usage_notes.length) {
+lines.push('## 使用注意事项');
+lines.push('');
+r.usage_notes.forEach(function (n) { lines.push('- ' + n);});
+lines.push('');
+}
+downloadBlob(lines.join('\n'), safeName(chip) + '_分析报告.md', 'text/markdown;charset=utf-8');
 }
 
 function unescapeCode(str) {
@@ -468,6 +722,54 @@ return str
 .replace(/\\\\/g, '\\')
 .replace(/\\"/g, '"')
 .replace(/\\'/g, "'");
+}
+
+// ---------- chat with the manual ----------
+
+$('#chat-send-btn').addEventListener('click', sendChat);
+$('#chat-input').addEventListener('keydown', function (e) {
+if (e.key === 'Enter') sendChat();
+});
+
+function appendChatBubble(role, text) {
+var log = $('#chat-log');
+var bubble = document.createElement('div');
+bubble.className = 'chat-bubble chat-' + role;
+bubble.textContent = text;
+log.appendChild(bubble);
+log.scrollTop = log.scrollHeight;
+return bubble;
+}
+
+async function sendChat() {
+var input = $('#chat-input');
+var question = input.value.trim();
+if (!question) return;
+if (!lastPayloadText) {
+showToast('请先完成一次分析再追问', 'error');
+return;
+}
+input.value = '';
+appendChatBubble('user', question);
+var pending = appendChatBubble('assistant', '思考中...');
+var btn = $('#chat-send-btn');
+btn.disabled = true;
+try {
+var data = await postJson('/api/chat', {
+text: lastPayloadText,
+question: question,
+history: chatHistory,
+}, false);
+pending.textContent = data.answer || '(无回答)';
+chatHistory.push({ role: 'user', content: question});
+chatHistory.push({ role: 'assistant', content: data.answer || ''});
+if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
+} catch (err) {
+pending.textContent = '提问失败：' + err.message;
+pending.classList.add('chat-error');
+} finally {
+btn.disabled = false;
+}
 }
 
 // ---------- history (localStorage) ----------
@@ -490,13 +792,15 @@ mcu: mcu,
 language: language,
 result: currentResult,
 meta: currentMeta,
+payloadText: lastPayloadText,
 });
 list = list.slice(0, 10);
 try {
 localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
 } catch (e) {
-// Storage full: drop the oldest half and retry once.
+// Storage full: drop the payload text first, then the oldest half.
 try {
+list.forEach(function (item) { delete item.payloadText;});
 localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 5)));
 } catch (e2) { /* give up silently */}
 }
@@ -528,7 +832,13 @@ main.addEventListener('click', function () {
 currentResult = item.result;
 currentMeta = item.meta || {};
 languageSelect.value = item.language;
+mcuInput.value = item.mcu;
+lastPayloadText = item.payloadText || '';
+chatHistory = [];
+$('#chat-log').innerHTML = '';
+$('#chat-card').style.display = lastPayloadText? '': 'none';
 renderResult(currentResult, currentMeta);
+if (!lastPayloadText) $('#chat-card').style.display = 'none';
 showSection('result');
 });
 var del = document.createElement('button');
@@ -597,6 +907,9 @@ pdfFileName = '';
 pdfTotalChars = 0;
 currentResult = null;
 currentMeta = null;
+lastPayloadText = '';
+chatHistory = [];
+$('#chat-log').innerHTML = '';
 fileNameDisplay.textContent = '点击或拖拽上传 PDF 文件';
 fileMeta.style.display = 'none';
 fileInput.value = '';

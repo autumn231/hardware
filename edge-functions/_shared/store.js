@@ -1,8 +1,8 @@
-// Configuration, counters and admin auth, all backed by the AI_HARDWARE_TOOL
-// KV namespace. Configuration lives in a single JSON document under the key
-// "cfg". Legacy flat keys from v1 (api_key, model, daily_limit,
-// admin_password) are migrated on first read so an existing deployment keeps
-// working after the upgrade.
+// Configuration, counters, cache, stats and admin auth, all backed by the
+// AI_HARDWARE_TOOL KV namespace. Configuration lives in a single JSON
+// document under the key "cfg". Legacy flat keys from v1 (api_key, model,
+// daily_limit, admin_password) are migrated on first read so an existing
+// deployment keeps working after the upgrade.
 
 import { kv } from './http.js';
 
@@ -23,6 +23,7 @@ export function defaultConfig() {
     },
     order: ['sensenova', 'deepseek', 'gemini', 'openrouter', 'custom'],
     daily_limit: 100,
+    ip_daily_limit: 20,
     access_code: '',
   };
 }
@@ -50,6 +51,9 @@ function normalizeConfig(raw) {
       cfg.order = order;
     }
     if (Number(raw.daily_limit) > 0) cfg.daily_limit = Number(raw.daily_limit);
+    if (raw.ip_daily_limit !== undefined && Number(raw.ip_daily_limit) >= 0) {
+      cfg.ip_daily_limit = Number(raw.ip_daily_limit);
+    }
     if (typeof raw.access_code === 'string') cfg.access_code = raw.access_code;
   }
   return cfg;
@@ -71,8 +75,7 @@ export async function loadConfig() {
   if (legacyKey) {
     cfg.providers.openrouter.key = legacyKey;
     if (legacyModel) cfg.providers.openrouter.model = legacyModel;
-    cfg.order = ['openrouter', 'sensenova', 'deepseek', 'gemini', 'openrouter', 'custom']
-      .filter((v, i, a) => a.indexOf(v) === i);
+    cfg.order = ['openrouter', 'sensenova', 'deepseek', 'gemini', 'custom'];
   }
   if (legacyLimit && Number(legacyLimit) > 0) cfg.daily_limit = Number(legacyLimit);
   await saveConfig(cfg);
@@ -85,12 +88,16 @@ export async function saveConfig(cfg) {
 
 // ---- call counters -------------------------------------------------------
 
-function todayKey() {
+export function todayStr() {
   const now = new Date();
   const y = now.getUTCFullYear();
   const m = String(now.getUTCMonth() + 1).padStart(2, '0');
   const d = String(now.getUTCDate()).padStart(2, '0');
-  return `call_count_${y}-${m}-${d}`;
+  return `${y}-${m}-${d}`;
+}
+
+function todayKey() {
+  return `call_count_${todayStr()}`;
 }
 
 export async function getTodayCount() {
@@ -115,12 +122,112 @@ export async function resetCounts() {
   await kv().put('total_calls', '0');
 }
 
-// ---- admin password and sessions -----------------------------------------
+// ---- per-IP rate limiting -------------------------------------------------
 
-async function sha256Hex(text) {
+export async function sha256Hex(text) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+export function clientIp(request) {
+  const xff = request.headers.get('x-forwarded-for') || '';
+  const first = xff.split(',')[0].trim();
+  return first || request.headers.get('EO-Client-IP') || 'unknown';
+}
+
+export async function getIpCount(ipHash) {
+  const count = await kv().get(`ip_${ipHash}_${todayStr()}`);
+  return count ? Number(count) || 0 : 0;
+}
+
+export async function incrementIpCount(ipHash) {
+  const current = await getIpCount(ipHash);
+  await kv().put(`ip_${ipHash}_${todayStr()}`, String(current + 1));
+}
+
+// ---- analysis result cache -------------------------------------------------
+// Same manual excerpt + MCU + language returns the previous result for 7
+// days, so repeat analyses cost nothing.
+
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export async function cacheKeyFor(text, mcu, language) {
+  const hash = await sha256Hex(`${language}|${mcu}|${text}`);
+  return `cache_${hash}`;
+}
+
+export async function getCached(key) {
+  try {
+    const raw = await kv().get(key);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry || !entry.ts || Date.now() - entry.ts > CACHE_TTL_MS) return null;
+    return entry;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function setCached(key, result, meta) {
+  try {
+    await kv().put(key, JSON.stringify({ ts: Date.now(), result, meta }));
+  } catch (e) {
+    // Cache failures never break an analysis.
+  }
+}
+
+// ---- provider stats and event log (best effort, never throws) -------------
+
+export async function recordProviderStat(provider, ok, ms) {
+  try {
+    const key = `pstats_${todayStr()}`;
+    const raw = await kv().get(key);
+    const stats = raw ? JSON.parse(raw) : {};
+    const entry = stats[provider] || { calls: 0, ok: 0, fail: 0, total_ms: 0 };
+    entry.calls += 1;
+    if (ok) entry.ok += 1;
+    else entry.fail += 1;
+    entry.total_ms += ms || 0;
+    stats[provider] = entry;
+    await kv().put(key, JSON.stringify(stats));
+  } catch (e) {
+    // ignore
+  }
+}
+
+export async function getProviderStats() {
+  try {
+    const raw = await kv().get(`pstats_${todayStr()}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+const MAX_EVENTS = 50;
+
+export async function pushEvent(event) {
+  try {
+    const raw = await kv().get('events');
+    const events = raw ? JSON.parse(raw) : [];
+    events.unshift({ ts: Date.now(), ...event });
+    await kv().put('events', JSON.stringify(events.slice(0, MAX_EVENTS)));
+  } catch (e) {
+    // ignore
+  }
+}
+
+export async function getEvents(limit) {
+  try {
+    const raw = await kv().get('events');
+    const events = raw ? JSON.parse(raw) : [];
+    return events.slice(0, limit || 10);
+  } catch (e) {
+    return [];
+  }
+}
+
+// ---- admin password and sessions -----------------------------------------
 
 export async function verifyAdminPassword(password) {
   const hash = await kv().get('admin_password_hash');

@@ -5,6 +5,8 @@ import {
   resetCounts,
   verifySession,
   loadConfig,
+  getProviderStats,
+  getEvents,
 } from '../../_shared/store.js';
 
 export async function onRequest(context) {
@@ -29,7 +31,10 @@ export async function onRequest(context) {
           today: await getTodayCount(),
           total: await getTotalCount(),
           daily_limit: cfg.daily_limit,
+          ip_daily_limit: cfg.ip_daily_limit,
           order: cfg.order,
+          provider_stats: await getProviderStats(),
+          events: await getEvents(10),
         },
       });
     }

@@ -367,3 +367,73 @@ body {
   z-index: 60;
 }
 .toast-error { border-color: var(--fail); }
+
+/* v3: streaming progress */
+.stream-preview-wrap { margin-top: 16px; text-align: left; }
+.stream-preview-label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.stream-preview {
+  background: #010409;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.progress-actions { margin-top: 16px; text-align: center; }
+
+/* v3: data tables (pins / registers / provider stats) */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th, .data-table td {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: left;
+  line-height: 1.5;
+  vertical-align: top;
+}
+.data-table th { background: rgba(255, 255, 255, 0.04); color: var(--text-dim); font-weight: 600; white-space: nowrap; }
+.data-table td { word-break: break-word; }
+
+/* v3: chat with the manual */
+.chat-card { margin-top: 16px; }
+.chat-log { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.chat-log:empty { margin-bottom: 0; }
+.chat-bubble {
+  max-width: 88%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-user { align-self: flex-end; background: rgba(47, 129, 247, 0.22); border: 1px solid rgba(47, 129, 247, 0.45); }
+.chat-assistant { align-self: flex-start; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); }
+.chat-error { color: var(--fail); }
+.chat-input-row { display: flex; gap: 10px; }
+.chat-input-row input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.chat-input-row input:focus { outline: none; border-color: var(--accent); }
+.chat-hint { margin-top: 10px; font-size: 12px; color: var(--text-dim); }
+
+/* v3: admin events */
+.event-list { font-size: 13px; line-height: 1.6; }
+.event-item { padding: 7px 0; border-top: 1px solid var(--border); color: var(--text-dim); }
+.event-item:first-child { border-top: none; }
+.event-item .event-ok { color: var(--ok); }
+.event-item .event-fail { color: var(--fail); }
+.health-line { font-size: 13px; color: var(--text-dim); margin-bottom: 14px; }
+.health-line .ok { color: var(--ok); }
+.sub-title { font-size: 14px; margin: 16px 0 10px; color: var(--text); }

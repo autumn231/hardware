@@ -1,7 +1,7 @@
 // AI provider layer. Every preset speaks the OpenAI chat completions dialect,
-// so one caller serves all of them. The analyze handler walks the configured
-// provider order and falls back on network errors, timeouts, rate limits and
-// server errors, which is what makes a flaky route to one vendor survivable.
+// so one caller serves all of them. Callers walk the configured provider
+// order and fall back on network errors, timeouts, rate limits and server
+// errors, which is what makes a flaky route to one vendor survivable.
 
 export const PROVIDERS = {
   sensenova: {
@@ -49,6 +49,7 @@ export const PROVIDERS = {
 };
 
 const CALL_TIMEOUT_MS = 50000;
+const STREAM_TIMEOUT_MS = 150000;
 
 function providerBaseUrl(id, providerCfg) {
   if (id === 'custom') return (providerCfg.base_url || '').replace(/\/+$/, '');
@@ -65,15 +66,12 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-// One chat completion call against one provider. Throws an Error whose
-// message is safe to show an admin. Returns the message content string.
-export async function callProvider(id, providerCfg, messages, request) {
+function buildRequest(id, providerCfg, messages, request, opts) {
   const preset = PROVIDERS[id];
   if (!preset) throw new Error(`未知供应商 ${id}`);
   const baseUrl = providerBaseUrl(id, providerCfg);
   if (!baseUrl) throw new Error(`${preset.name} 未填写接口地址`);
   if (!providerCfg.key) throw new Error(`${preset.name} 未配置 API Key`);
-
   const model = providerCfg.model || preset.defaultModel;
   if (!model) throw new Error(`${preset.name} 未填写模型`);
 
@@ -87,6 +85,7 @@ export async function callProvider(id, providerCfg, messages, request) {
     headers['X-OpenRouter-Title'] = 'Hardware Data Analyzer';
   }
 
+  const wantJson = opts && opts.jsonMode !== undefined ? opts.jsonMode : preset.jsonMode;
   const body = {
     model,
     messages,
@@ -94,14 +93,19 @@ export async function callProvider(id, providerCfg, messages, request) {
     max_tokens: 8192,
     ...preset.extraBody,
   };
-  if (preset.jsonMode) body.response_format = { type: 'json_object' };
+  if (wantJson) body.response_format = { type: 'json_object' };
+  if (opts && opts.stream) body.stream = true;
+  return { url: `${baseUrl}/chat/completions`, headers, body, model, preset };
+}
 
+// One chat completion call against one provider. Throws an Error whose
+// message is safe to show an admin. Returns the message content string.
+// opts: { jsonMode?: boolean } — chat answers want plain text, analysis
+// wants JSON mode where the preset supports it.
+export async function callProvider(id, providerCfg, messages, request, opts) {
+  const { url, headers, body, model, preset } = buildRequest(id, providerCfg, messages, request, opts);
   const send = (payload) =>
-    fetchWithTimeout(
-      `${baseUrl}/chat/completions`,
-      { method: 'POST', headers, body: JSON.stringify(payload) },
-      CALL_TIMEOUT_MS
-    );
+    fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(payload) }, CALL_TIMEOUT_MS);
 
   let res;
   try {
@@ -136,7 +140,7 @@ export async function callProvider(id, providerCfg, messages, request) {
 // Walk the configured order until one provider answers. Returns the winning
 // content plus the full attempt log so the UI can show what actually served
 // the request and what failed along the way.
-export async function chatWithFallback(cfg, messages, request) {
+export async function chatWithFallback(cfg, messages, request, opts) {
   const attempts = [];
   for (const id of cfg.order) {
     const providerCfg = cfg.providers[id] || {};
@@ -146,7 +150,7 @@ export async function chatWithFallback(cfg, messages, request) {
     }
     const started = Date.now();
     try {
-      const { content, model } = await callProvider(id, providerCfg, messages, request);
+      const { content, model } = await callProvider(id, providerCfg, messages, request, opts);
       attempts.push({ provider: id, ok: true, ms: Date.now() - started });
       return { content, provider: id, model, attempts };
     } catch (e) {
@@ -161,6 +165,107 @@ export async function chatWithFallback(cfg, messages, request) {
   const err = new Error('所有已配置的供应商都调用失败');
   err.attempts = attempts;
   throw err;
+}
+
+// Streaming variant used by the analysis endpoint. onEvent receives
+// { type: 'provider', provider, model } once a provider starts answering,
+// then { type: 'delta', chars } as content grows. Fallback only happens
+// before the first token: once a provider is streaming, it owns the call.
+export async function streamChatWithFallback(cfg, messages, request, onEvent) {
+  const attempts = [];
+  for (const id of cfg.order) {
+    const providerCfg = cfg.providers[id] || {};
+    if (!providerCfg.key) {
+      attempts.push({ provider: id, ok: false, error: '未配置 Key，已跳过' });
+      continue;
+    }
+    const started = Date.now();
+    try {
+      const result = await streamProvider(id, providerCfg, messages, request, onEvent);
+      attempts.push({ provider: id, ok: true, ms: Date.now() - started });
+      return { ...result, attempts };
+    } catch (e) {
+      attempts.push({
+        provider: id,
+        ok: false,
+        ms: Date.now() - started,
+        error: String((e && e.message) || e).slice(0, 300),
+      });
+    }
+  }
+  const err = new Error('所有已配置的供应商都调用失败');
+  err.attempts = attempts;
+  throw err;
+}
+
+async function streamProvider(id, providerCfg, messages, request, onEvent) {
+  const { url, headers, body, model, preset } = buildRequest(id, providerCfg, messages, request, { stream: true });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (res.status === 400 && body.response_format) {
+      const retryBody = { ...body };
+      delete retryBody.response_format;
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(retryBody),
+        signal: controller.signal,
+      });
+    }
+  } catch (e) {
+    clearTimeout(timer);
+    if (e && e.name === 'AbortError') throw new Error(`${preset.name} 流式请求超时`);
+    throw new Error(`${preset.name} 网络连不上：${(e && e.message) || e}`);
+  }
+  if (!res.ok || !res.body) {
+    clearTimeout(timer);
+    const errText = res.body ? await res.text().catch(() => '') : '';
+    throw new Error(`${preset.name} 返回 ${res.status}：${errText.slice(0, 300)}`);
+  }
+
+  onEvent({ type: 'provider', provider: id, model });
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const json = JSON.parse(payload);
+          const delta = json.choices && json.choices[0] && json.choices[0].delta;
+          const piece = (delta && delta.content) || '';
+          if (piece) {
+            content += piece;
+            onEvent({ type: 'delta', chars: content.length, tail: content.slice(-400) });
+          }
+        } catch (e) {
+          // Partial or non-JSON SSE lines are ignored.
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!content) throw new Error(`${preset.name} 流式返回内容为空`);
+  return { content, provider: id, model };
 }
 
 // Lightweight reachability probe used by the admin connectivity test. It

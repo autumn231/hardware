@@ -72,6 +72,8 @@
     renderProviders();
     renderOrder();
     $('#daily-limit-input').value = config.daily_limit;
+    $('#ip-limit-input').value = config.ip_daily_limit;
+    loadHealth();
     $('#access-code-input').value = '';
     $('#access-code-input').placeholder = config.access_code_set
       ? '已启用口令，输入新口令可更换，清空并保存则关闭'
@@ -278,6 +280,7 @@
         providers: collectProviders(),
         order: order,
         daily_limit: Number($('#daily-limit-input').value) || 100,
+        ip_daily_limit: Number($('#ip-limit-input').value) || 0,
       };
       var codeInput = $('#access-code-input');
       // Only send access_code when the admin typed something or a code was
@@ -316,6 +319,87 @@
       $('#stat-today').textContent = data.stats.today;
       $('#stat-total').textContent = data.stats.total;
       $('#stat-limit').textContent = data.stats.daily_limit;
+      renderProviderStats(data.stats.provider_stats || {});
+      renderEvents(data.stats.events || []);
+    }
+  }
+
+  var PROVIDER_LABELS = {
+    sensenova: 'SenseNova（商汤）',
+    deepseek: 'DeepSeek 官方',
+    gemini: 'Google Gemini',
+    openrouter: 'OpenRouter',
+    custom: '自定义服务',
+  };
+
+  function renderProviderStats(stats) {
+    var wrap = $('#pstats-wrap');
+    wrap.innerHTML = '';
+    var ids = Object.keys(stats);
+    if (!ids.length) return;
+    var title = document.createElement('h4');
+    title.className = 'sub-title';
+    title.textContent = '今日各供应商';
+    wrap.appendChild(title);
+    var table = document.createElement('table');
+    table.className = 'data-table';
+    var html = '<thead><tr><th>供应商</th><th>调用</th><th>成功</th><th>失败</th><th>平均耗时</th></tr></thead><tbody>';
+    ids.forEach(function (id) {
+      var st = stats[id];
+      var avg = st.calls ? Math.round(st.total_ms / st.calls) : 0;
+      html += '<tr><td>' + (PROVIDER_LABELS[id] || id) + '</td><td>' + st.calls + '</td><td>' + st.ok + '</td><td>' + st.fail + '</td><td>' + avg + ' ms</td></tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+    wrap.appendChild(table);
+  }
+
+  function renderEvents(events) {
+    var list = $('#event-list');
+    list.innerHTML = '';
+    if (!events.length) {
+      list.textContent = '暂无事件';
+      return;
+    }
+    events.forEach(function (evt) {
+      var row = document.createElement('div');
+      row.className = 'event-item';
+      var when = new Date(evt.ts);
+      var time = (when.getMonth() + 1) + '-' + when.getDate() + ' ' +
+        String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0');
+      var status = document.createElement('span');
+      status.className = evt.ok ? 'event-ok' : 'event-fail';
+      status.textContent = evt.ok ? '成功' : '失败';
+      var desc = evt.type === 'chat' ? '手册问答' : '手册分析';
+      var detail = '';
+      if (evt.ok) {
+        detail = (PROVIDER_LABELS[evt.provider] || evt.provider || '') + ' · ' + (evt.model || '') +
+          (evt.chip ? ' · ' + evt.chip : '') + (evt.ms ? ' · ' + (evt.ms / 1000).toFixed(1) + ' 秒' : '');
+      } else {
+        detail = evt.error || '';
+      }
+      row.textContent = time + ' ';
+      row.appendChild(status);
+      row.appendChild(document.createTextNode(' ' + desc + (detail ? ' · ' + detail : '')));
+      list.appendChild(row);
+    });
+  }
+
+  async function loadHealth() {
+    var el = $('#health-line');
+    try {
+      var res = await fetch('/api/health');
+      var data = await res.json();
+      var span = document.createElement('span');
+      span.className = 'ok';
+      span.textContent = '正常';
+      el.textContent = '服务状态：';
+      el.appendChild(span);
+      el.appendChild(document.createTextNode(
+        ' · 版本 ' + data.version + ' · KV ' + (data.kv ? '已绑定' : '未绑定') +
+        ' · 已配置 ' + data.providers_configured + ' 家供应商'));
+    } catch (e) {
+      el.textContent = '服务状态：健康检查失败';
     }
   }
   $('#refresh-stats-btn').addEventListener('click', refreshStats);

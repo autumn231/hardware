@@ -100,7 +100,14 @@
             <div class="step-status" id="step-generate-status"></div>
           </div>
         </div>
-        <p class="progress-elapsed">已等待 <span id="elapsed">0</span> 秒，模型生成代码需要一点时间，请勿关闭页面</p>
+        <p class="progress-elapsed">已等待 <span id="elapsed">0</span> 秒<span id="stream-stats"></span></p>
+        <div class="stream-preview-wrap" id="stream-preview-wrap" style="display:none;">
+          <div class="stream-preview-label">模型实时输出预览</div>
+          <pre class="stream-preview" id="stream-preview"></pre>
+        </div>
+        <div class="progress-actions">
+          <button class="btn btn-secondary" id="cancel-btn">取消分析</button>
+        </div>
       </div>
     </section>
 
@@ -109,11 +116,27 @@
         <h2>分析结果</h2>
         <div class="result-actions">
           <button class="btn btn-secondary" id="download-btn">下载全部代码</button>
+          <button class="btn btn-secondary" id="report-btn">下载分析报告</button>
           <button class="btn btn-secondary" id="new-analysis-btn">重新分析</button>
         </div>
       </div>
       <div class="result-meta" id="result-meta"></div>
       <div class="result-cards" id="result-cards"></div>
+
+      <div class="card chat-card" id="chat-card" style="display:none;">
+        <div class="card-header">
+          <span class="card-icon">💬</span>
+          <h3>继续追问这本手册</h3>
+        </div>
+        <div class="card-body">
+          <div class="chat-log" id="chat-log"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="例如：这个芯片的 I2C 地址是多少？供电范围呢？">
+            <button class="btn btn-primary" id="chat-send-btn">提问</button>
+          </div>
+          <p class="chat-hint">回答只依据手册内容，手册未提及的参数会明确说明。</p>
+        </div>
+      </div>
     </section>
 
     <div id="error-section" class="section" style="display:none;">

@@ -67,6 +67,10 @@
               <input type="number" id="daily-limit-input" min="1" max="100000">
             </div>
             <div class="form-group">
+              <label for="ip-limit-input">单 IP 每日上限（0 为不限）</label>
+              <input type="number" id="ip-limit-input" min="0" max="100000">
+            </div>
+            <div class="form-group">
               <label for="access-code-input">分析访问口令（留空为不启用）</label>
               <input type="text" id="access-code-input" placeholder="启用后，用户分析时需输入此口令">
             </div>
@@ -91,6 +95,10 @@
             <div class="info-item"><span class="info-label">累计调用</span><span class="info-value" id="stat-total">-</span></div>
             <div class="info-item"><span class="info-label">每日上限</span><span class="info-value" id="stat-limit">-</span></div>
           </div>
+          <div class="health-line" id="health-line"></div>
+          <div id="pstats-wrap"></div>
+          <h4 class="sub-title">最近事件</h4>
+          <div class="event-list" id="event-list"></div>
           <button class="btn btn-secondary" id="reset-stats-btn">重置统计</button>
           <button class="btn btn-secondary" id="refresh-stats-btn">刷新</button>
         </div>

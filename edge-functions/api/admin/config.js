@@ -31,6 +31,7 @@ function publicConfig(cfg) {
     providers,
     order: cfg.order,
     daily_limit: cfg.daily_limit,
+    ip_daily_limit: cfg.ip_daily_limit,
     access_code_set: !!cfg.access_code,
   };
 }
@@ -94,6 +95,10 @@ export async function onRequest(context) {
       if (body.daily_limit !== undefined && Number(body.daily_limit) > 0) {
         cfg.daily_limit = Number(body.daily_limit);
         updated.push('daily_limit');
+      }
+      if (body.ip_daily_limit !== undefined && Number(body.ip_daily_limit) >= 0) {
+        cfg.ip_daily_limit = Number(body.ip_daily_limit);
+        updated.push('ip_daily_limit');
       }
       if (typeof body.access_code === 'string') {
         cfg.access_code = body.access_code.trim();
