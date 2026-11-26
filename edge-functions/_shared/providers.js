@@ -25,7 +25,6 @@ export const PROVIDERS = {
       { id: '@makers/minimax-m2.7', label: 'MiniMax M2.7' },
       { id: '@makers/hy3', label: '混元 Hy3' },
       { id: '@makers/hy3-preview', label: '混元 Hy3 Preview' },
-      { id: '@makers/zhuque-text', label: '朱雀文本检测' },
     ],
     extraBody: {},
     keyHint: '在 EdgeOne 控制台 Makers → Models → API Key 创建的密钥',
@@ -315,10 +314,12 @@ export async function probeProvider(id, providerCfg) {
   }
 }
 
-// Fire one tiny chat request per catalogued model, in parallel, and
-// compare the gateway-reported official quota deduction
+// Fire one tiny STREAMING chat request per catalogued model, in
+// parallel, and compare the gateway-reported official quota deduction
 // (makers_models_usage) with the actual token usage. The ratio is the
-// effective per-model multiplier the admin dropdown annotates.
+// effective per-model multiplier the admin dropdown annotates. The
+// gateway only attaches the usage receipt to streaming responses, so
+// this must stream even though the content itself is discarded.
 export async function measureModelRates(id, providerCfg) {
   const preset = PROVIDERS[id];
   if (!preset) return { error: `未知供应商 ${id}` };
@@ -328,62 +329,104 @@ export async function measureModelRates(id, providerCfg) {
   if (!providerCfg || !providerCfg.key) return { error: '未配置 API Key' };
   const baseUrl = providerBaseUrl(id, providerCfg);
   const results = await Promise.all(
-    preset.models.map(async (m) => {
-      try {
-        const res = await fetchWithTimeout(
-          `${baseUrl}/chat/completions`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${providerCfg.key}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: m.id,
-              messages: [{ role: 'user', content: '请用一句话介绍你自己，不超过三十个字。' }],
-              max_tokens: 48,
-              stream: false,
-            }),
-          },
-          30000
-        );
-        if (!res.ok) {
-          const errText = await res.text();
-          return { id: m.id, ok: false, error: `返回 ${res.status}：${errText.slice(0, 160)}` };
-        }
-        const data = await res.json();
-        const usage = data.usage || {};
-        const total =
-          usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
-        const official =
-          typeof data.makers_models_usage === 'number' ? data.makers_models_usage : null;
-        if (!total || official === null) {
-          return {
-            id: m.id,
-            ok: false,
-            error: '接口未返回用量回执',
-            total_tokens: total || 0,
-            official_tokens: official,
-          };
-        }
-        return {
-          id: m.id,
-          ok: true,
-          total_tokens: total,
-          official_tokens: official,
-          rate: Math.round((official / total) * 100) / 100,
-        };
-      } catch (e) {
-        return {
-          id: m.id,
-          ok: false,
-          error:
-            e && e.name === 'AbortError'
-              ? '连接超时（30 秒）'
-              : `网络连不上：${(e && e.message) || e}`,
-        };
-      }
-    })
+    preset.models.map((m) => measureOneModel(baseUrl, providerCfg.key, m.id))
   );
   return { results };
+}
+
+async function measureOneModel(baseUrl, key, modelId) {
+  const url = `${baseUrl}/chat/completions`;
+  const headers = {
+    Authorization: 'Bearer ' + key,
+    'Content-Type': 'application/json',
+  };
+  const payload = {
+    model: modelId,
+    messages: [{ role: 'user', content: '请用一句话介绍你自己，不超过三十个字。' }],
+    max_tokens: 48,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  try {
+    let res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (res.status === 400) {
+      // Some models reject stream_options; retry once without it.
+      const retry = { ...payload };
+      delete retry.stream_options;
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(retry),
+        signal: controller.signal,
+      });
+    }
+    if (!res.ok || !res.body) {
+      const errText = res.body ? await res.text().catch(() => '') : '';
+      return { id: modelId, ok: false, error: `返回 ${res.status}：${errText.slice(0, 160)}` };
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let usage = null;
+    let officialUsage = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === '[DONE]') continue;
+        try {
+          const json = JSON.parse(data);
+          if (json.usage) usage = json.usage;
+          if (json.makers_models_usage) officialUsage = json.makers_models_usage;
+        } catch (e) {
+          // Partial or non-JSON SSE lines are ignored.
+        }
+      }
+    }
+    const total = usage
+      ? usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0)
+      : 0;
+    if (!total || officialUsage === null) {
+      return {
+        id: modelId,
+        ok: false,
+        error:
+          '未拿到用量回执（usage ' + (total ? '有' : '无') +
+          '、官方扣减 ' + (officialUsage === null ? '无' : '有') + '）',
+        total_tokens: total || 0,
+        official_tokens: officialUsage,
+      };
+    }
+    return {
+      id: modelId,
+      ok: true,
+      total_tokens: total,
+      official_tokens: officialUsage,
+      rate: Math.round((officialUsage / total) * 100) / 100,
+    };
+  } catch (e) {
+    return {
+      id: modelId,
+      ok: false,
+      error:
+        e && e.name === 'AbortError'
+          ? '连接超时（45 秒）'
+          : `网络连不上：${(e && e.message) || e}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }

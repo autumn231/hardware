@@ -481,6 +481,35 @@ body {
 }
 .rates-box:empty { margin-top: 0; }
 
+/* admin panel tabs */
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 8px 0;
+}
+.tab-btn {
+  flex: 1;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 10px 8px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.tab-btn.active {
+  background: linear-gradient(180deg, var(--green-bright), #2fbf5f);
+  border-color: var(--green-dark);
+  color: #06130a;
+  font-weight: 700;
+}
+
 /* modal and toast */
 .modal-overlay {
   position: fixed;
@@ -713,10 +742,10 @@ body {
   .step-status { font-size: 11px; overflow-wrap: anywhere; }
   .step-line { margin-top: 16px; }
 
-  /* data tables keep a readable width and scroll inside their card */
-  .card-body:has(.data-table) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .data-table { min-width: 520px; }
-  .data-table th, .data-table td { padding: 6px 8px; }
+  /* data tables fit the screen width: no sideways scrolling anywhere */
+  .data-table { min-width: 0; width: 100%; font-size: 12px; }
+  .data-table th, .data-table td { padding: 5px 6px; }
+  .data-table th { white-space: normal; }
   /* identifiers (TEMP_H, 0x00, CONFIG) must never break mid-token */
   .data-table td { word-break: normal; overflow-wrap: break-word; }
 

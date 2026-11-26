@@ -35,6 +35,24 @@
   });
   $('#logout-btn').addEventListener('click', logout);
 
+  // ---------- panel tabs ----------
+  var tabBtns = document.querySelectorAll('.tab-btn');
+  function switchTab(name) {
+    tabBtns.forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tab') === name);
+    });
+    ['providers', 'settings', 'stats'].forEach(function (n) {
+      var el = document.getElementById('tab-' + n);
+      if (el) el.style.display = n === name ? '' : 'none';
+    });
+    if (name === 'stats') refreshStats();
+  }
+  tabBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      switchTab(btn.getAttribute('data-tab'));
+    });
+  });
+
   async function doLogin() {
     var password = $('#password-input').value;
     var errorEl = $('#login-error');

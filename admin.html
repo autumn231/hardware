@@ -47,6 +47,12 @@
         <h2>供应商配置</h2>
         <button class="btn btn-secondary" id="logout-btn">退出登录</button>
       </div>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="providers" type="button">供应商</button>
+        <button class="tab-btn" data-tab="settings" type="button">通用设置</button>
+        <button class="tab-btn" data-tab="stats" type="button">调用统计</button>
+      </div>
+      <div id="tab-providers" class="tab-panel">
       <p class="panel-note">分析请求会按下面的顺位依次尝试：第一家超时、报错或限流时自动切下一家。点「测试连接」会从边缘函数所在的位置探测该供应商，通不通以这个结果为准。</p>
       <div id="provider-list"></div>
 
@@ -59,7 +65,9 @@
           <div id="order-list"></div>
         </div>
       </div>
+      </div>
 
+      <div id="tab-settings" class="tab-panel" style="display:none;">
       <div class="card settings-card">
         <div class="card-header">
           <span class="card-icon">🔧</span>
@@ -88,7 +96,9 @@
           <span class="save-status" id="save-status"></span>
         </div>
       </div>
+      </div>
 
+      <div id="tab-stats" class="tab-panel" style="display:none;">
       <div class="card settings-card">
         <div class="card-header">
           <span class="card-icon">📊</span>
@@ -108,6 +118,7 @@
           <button class="btn btn-secondary" id="reset-stats-btn">重置统计</button>
           <button class="btn btn-secondary" id="refresh-stats-btn">刷新</button>
         </div>
+      </div>
       </div>
     </section>
   </main>
