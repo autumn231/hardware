@@ -331,7 +331,97 @@ export async function measureModelRates(id, providerCfg) {
   const results = await Promise.all(
     preset.models.map((m) => measureOneModel(baseUrl, providerCfg.key, m.id))
   );
+  const first = results[0];
+  if (first && !first.ok && String(first.error).indexOf('未拿到用量回执') === 0) {
+    first.error += '｜诊断：' + (await debugProbe(baseUrl, providerCfg.key, preset.models[0].id));
+  }
   return { results };
+}
+
+async function debugProbe(baseUrl, key, modelId) {
+  const headers = { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };
+  const prompt = '请写一段三百字左右的散文，描写秋天的田野。';
+  const out = [];
+  try {
+    const res = await fetch(baseUrl + '/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 600,
+        stream: false,
+      }),
+    });
+    const hdrs = [];
+    res.headers.forEach((v, k) => {
+      if (/usage|maker|token|quota|rate/i.test(k)) hdrs.push(k + '=' + v);
+    });
+    const data = await res.json().catch(() => null);
+    if (data) {
+      out.push('非流式顶层键[' + Object.keys(data).join(',') + ']');
+      if (data.usage) out.push('usage键[' + Object.keys(data.usage).join(',') + ']');
+      out.push(
+        'makers键存在=' + ('makers_models_usage' in data) +
+        ' 值=' + JSON.stringify(data.makers_models_usage)
+      );
+    } else {
+      out.push('非流式无JSON(状态' + res.status + ')');
+    }
+    if (hdrs.length) out.push('相关响应头[' + hdrs.join(' ; ') + ']');
+  } catch (e) {
+    out.push('非流式诊断失败：' + ((e && e.message) || e));
+  }
+  try {
+    const res = await fetch(baseUrl + '/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 600,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const chunkKeys = new Set();
+    let makersSeen = false;
+    let makersVal = null;
+    let usageKeys = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith('data:')) continue;
+        const d = t.slice(5).trim();
+        if (d === '[DONE]') continue;
+        try {
+          const j = JSON.parse(d);
+          Object.keys(j).forEach((k) => chunkKeys.add(k));
+          if ('makers_models_usage' in j) {
+            makersSeen = true;
+            makersVal = j.makers_models_usage;
+          }
+          if (j.usage) usageKeys = Object.keys(j.usage);
+        } catch (e) {
+          // ignore partial lines
+        }
+      }
+    }
+    out.push('流式块顶层键[' + Array.from(chunkKeys).join(',') + ']');
+    out.push('流式makers键存在=' + makersSeen + ' 值=' + JSON.stringify(makersVal));
+    if (usageKeys) out.push('流式usage键[' + usageKeys.join(',') + ']');
+  } catch (e) {
+    out.push('流式诊断失败：' + ((e && e.message) || e));
+  }
+  return out.join('；');
 }
 
 async function measureOneModel(baseUrl, key, modelId) {
