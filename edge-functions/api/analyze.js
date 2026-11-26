@@ -201,8 +201,56 @@ async function runChunkedAnalysis(cfg, text, mcu, language, request, onEvent) {
     }
   }
 
-  const failed = parts.filter((p) => !p.ok);
   const merged = mergeSectionResults(parts.filter((p) => p.ok));
+  // Sanity checks on the assembled result: a section can parse as JSON
+  // yet still carry a truncated fragment (observed: initialization code
+  // reduced to a single include line). Broken code pieces are dropped,
+  // and a broken initialization gets one focused regeneration attempt.
+  if (Array.isArray(merged.driver_functions)) {
+    merged.driver_functions = merged.driver_functions.filter(
+      (f) => f && String(f.code || '').length >= 80
+    );
+  }
+  const initCodeOk = (obj) => {
+    const code = obj && obj.initialization && obj.initialization.code;
+    return typeof code === 'string' && code.length >= 120;
+  };
+  if (!initCodeOk(merged)) {
+    try {
+      const section = ANALYSIS_SECTIONS.find((s) => s.id === 'init');
+      const messages = buildSectionMessages(section, text, mcu, language);
+      messages.push({
+        role: 'user',
+        content:
+          '初始化代码必须是完整代码片段（至少包含外设初始化与芯片配置，不少于 300 字符），只输出合法 JSON，代码中的换行、引号、反斜杠必须正确转义。',
+      });
+      const res = await callProvider('makers', providerCfg, messages, request, {
+        timeoutMs: SECTION_TIMEOUT_MS,
+        maxTokens: 2400,
+      });
+      if (res.usage) usages.push(res.usage);
+      const parsed = extractJson(res.content);
+      if (parsed && initCodeOk(parsed)) {
+        merged.initialization = parsed.initialization;
+      }
+    } catch (e) {
+      // fall through to clearing below
+    }
+  }
+  if (!initCodeOk(merged)) {
+    if (merged.initialization) {
+      merged.initialization = {
+        description: merged.initialization.description || '',
+        code: '',
+      };
+    }
+    const initPart = parts.find((p) => p.section === 'init');
+    if (initPart && initPart.ok) {
+      initPart.ok = false;
+      initPart.error = '初始化代码不完整';
+    }
+  }
+  const failed = parts.filter((p) => !p.ok);
   const normalized = normalizeResult(merged);
   const hasCode =
     (normalized.driver_functions || []).length > 0 ||

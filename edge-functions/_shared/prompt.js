@@ -98,7 +98,7 @@ export const ANALYSIS_SECTIONS = [
     keywords: ['data', 'conversion', 'measurement', 'threshold', 'mode', 'status', 'alert', '数据', '转换', '测量', '阈值', '模式', '状态', '报警'],
     format: '{"driver_functions":[{"name":"函数名","description":"功能说明","code":"完整代码"}]}',
     extra:
-      '给 1 到 2 个进阶函数：读取并换算测量数据、设置工作模式/阈值/状态读取等。不要重复基础读写函数名；手册依据不足时给最通用的一种实现，并在 description 里说明。',
+      '只给 1 个进阶函数：读取并换算测量数据，或设置工作模式/阈值（二选一）。不要重复基础读写函数名；代码控制在 900 字符内，必须是合法 JSON 字符串（换行、引号、反斜杠正确转义）；手册依据不足时在 description 里说明。',
   },
 ];
 
