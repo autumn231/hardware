@@ -454,7 +454,7 @@ resultMeta.style.display = parts.length? '': 'none';
     if (meta && meta.degraded) {
       var warn = document.createElement('div');
       warn.className = 'result-meta-note';
-      warn.textContent = '本次生成不完整：模型未返回驱动代码，可能是模型能力不足或输出被截断。建议重试，或在管理后台更换更强的模型。';
+      warn.textContent = '本次生成不完整：有关键小节未完成，或模型未返回完整驱动代码。建议重试，或在管理后台更换更强的模型。';
       resultMeta.appendChild(warn);
     }
 if (meta && meta.attempts && meta.attempts.some(function (a) { return!a.ok;})) {

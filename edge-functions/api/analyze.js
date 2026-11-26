@@ -112,7 +112,16 @@ async function runChunkedAnalysis(cfg, text, mcu, language, request, onEvent) {
             tail: `【${section.label}完成】` + res.content.slice(-300),
           });
         }
-        if (!parsed) throw new Error('JSON 解析失败');
+        if (!parsed) {
+          return {
+            section: section.id,
+            label: section.label,
+            ok: false,
+            ms: Date.now() - sectionStarted,
+            error: 'JSON 解析失败',
+            rawContent: res.content,
+          };
+        }
         return {
           section: section.id,
           label: section.label,
@@ -131,6 +140,66 @@ async function runChunkedAnalysis(cfg, text, mcu, language, request, onEvent) {
       }
     })
   );
+
+  // One sequential rescue pass for failed sections. Parse failures first
+  // go through a constrained JSON repair of the raw section output; empty
+  // or network-failed sections are regenerated once with a stricter,
+  // shorter instruction. This keeps the common case parallel and fast
+  // while avoiding a result with missing core sections.
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part.ok) continue;
+    const section = ANALYSIS_SECTIONS.find((s) => s.id === part.section);
+    if (!section) continue;
+    const retryStarted = Date.now();
+    try {
+      let retryContent = '';
+      if (part.rawContent) {
+        const fix = await callProvider('makers', providerCfg, buildRepairMessages(part.rawContent), request, {
+          timeoutMs: 35000,
+          maxTokens: section.maxTokens + 800,
+        });
+        if (fix.usage) usages.push(fix.usage);
+        retryContent = fix.content;
+      } else {
+        const messages = buildSectionMessages(section, text, mcu, language);
+        messages.push({
+          role: 'user',
+          content:
+            '上一次输出未成功。请重新输出，务必只输出合法 JSON；代码字符串中的换行、引号、反斜杠必须正确转义；内容更简洁。',
+        });
+        const res = await callProvider('makers', providerCfg, messages, request, {
+          timeoutMs: SECTION_TIMEOUT_MS,
+          maxTokens: section.maxTokens + 400,
+        });
+        if (res.usage) usages.push(res.usage);
+        retryContent = res.content;
+      }
+      const parsed = extractJson(retryContent);
+      if (!parsed) throw new Error('补跑后 JSON 仍无法解析');
+      completedChars += retryContent.length;
+      if (onEvent) {
+        onEvent({
+          type: 'delta',
+          chars: completedChars,
+          tail: `【${section.label}已补齐】` + retryContent.slice(-300),
+        });
+      }
+      parts[i] = {
+        section: section.id,
+        label: section.label,
+        ok: true,
+        ms: part.ms + (Date.now() - retryStarted),
+        parsed,
+        retried: true,
+      };
+    } catch (e) {
+      parts[i] = {
+        ...part,
+        error: `${part.error || '失败'}；补跑失败：${String((e && e.message) || e).slice(0, 200)}`,
+      };
+    }
+  }
 
   const failed = parts.filter((p) => !p.ok);
   const merged = mergeSectionResults(parts.filter((p) => p.ok));
@@ -162,6 +231,7 @@ async function runChunkedAnalysis(cfg, text, mcu, language, request, onEvent) {
       label: p.label,
       ok: p.ok,
       ms: p.ms,
+      retried: p.retried || undefined,
       error: p.error || undefined,
     })),
     sections_failed: failed.map((p) => p.section),
@@ -220,6 +290,13 @@ async function finalizeSuccess(cfg, first, started, request, cacheKey, ipHash, e
     !parsed ||
     ((result.driver_functions || []).length === 0 &&
       !(result.initialization && result.initialization.code));
+  if (
+    extraMeta &&
+    Array.isArray(extraMeta.sections_failed) &&
+    extraMeta.sections_failed.some((s) => s === 'overview' || s === 'init')
+  ) {
+    meta.degraded = true;
+  }
   await incrementCallCount();
   await incrementIpCount(ipHash);
   for (const attempt of first.attempts) {
