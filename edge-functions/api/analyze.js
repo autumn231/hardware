@@ -15,7 +15,15 @@ import {
   pushEvent,
 } from '../_shared/store.js';
 import { chatWithFallback, callProvider, streamChatWithFallback } from '../_shared/providers.js';
-import { buildMessages, buildRepairMessages, extractJson, normalizeResult } from '../_shared/prompt.js';
+import {
+  buildMessages,
+  buildRepairMessages,
+  buildSectionMessages,
+  extractJson,
+  mergeSectionResults,
+  normalizeResult,
+  ANALYSIS_SECTIONS,
+} from '../_shared/prompt.js';
 
 // Hard cap on the manual text accepted by this endpoint. The frontend packs
 // a keyword scored excerpt when a manual is longer than this.
@@ -43,6 +51,153 @@ async function parseAndRepair(cfg, first, request) {
     }
   }
   return { parsed, repaired };
+}
+
+const CHUNK_MIN_TEXT_CHARS = 16000;
+const SECTION_TIMEOUT_MS = 45000;
+
+function sumUsage(usages) {
+  if (!usages || !usages.length) return null;
+  const total = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  for (const usage of usages) {
+    if (!usage) continue;
+    total.prompt_tokens += Number(usage.prompt_tokens) || 0;
+    total.completion_tokens += Number(usage.completion_tokens) || 0;
+    total.total_tokens += Number(usage.total_tokens) || 0;
+  }
+  if (!total.total_tokens) total.total_tokens = total.prompt_tokens + total.completion_tokens;
+  return total;
+}
+
+function shouldUseChunked(cfg, text) {
+  return (
+    text &&
+    text.length >= CHUNK_MIN_TEXT_CHARS &&
+    cfg.providers.makers &&
+    cfg.providers.makers.key
+  );
+}
+
+// Long-manual fast path: split the work into small parallel completions
+// on the EdgeOne built-in model. Each section is short enough to finish
+// before the Makers gateway severs long generations, and each prompt is
+// a keyword-scored excerpt instead of the full manual. OpenRouter stays
+// configured as the last-resort whole-request fallback only.
+async function runChunkedAnalysis(cfg, text, mcu, language, request, onEvent) {
+  const started = Date.now();
+  const providerCfg = cfg.providers.makers;
+  const model = providerCfg.model || '@makers/deepseek-v4-flash';
+  if (onEvent) onEvent({ type: 'provider', provider: 'makers', model });
+
+  const usages = [];
+  let completedChars = 0;
+  const parts = await Promise.all(
+    ANALYSIS_SECTIONS.map(async (section) => {
+      const sectionStarted = Date.now();
+      try {
+        const res = await callProvider(
+          'makers',
+          providerCfg,
+          buildSectionMessages(section, text, mcu, language),
+          request,
+          { timeoutMs: SECTION_TIMEOUT_MS, maxTokens: section.maxTokens }
+        );
+        if (res.usage) usages.push(res.usage);
+        const parsed = extractJson(res.content);
+        completedChars += res.content.length;
+        if (onEvent) {
+          onEvent({
+            type: 'delta',
+            chars: completedChars,
+            tail: `【${section.label}完成】` + res.content.slice(-300),
+          });
+        }
+        if (!parsed) throw new Error('JSON 解析失败');
+        return {
+          section: section.id,
+          label: section.label,
+          ok: true,
+          ms: Date.now() - sectionStarted,
+          parsed,
+        };
+      } catch (e) {
+        return {
+          section: section.id,
+          label: section.label,
+          ok: false,
+          ms: Date.now() - sectionStarted,
+          error: String((e && e.message) || e).slice(0, 300),
+        };
+      }
+    })
+  );
+
+  const failed = parts.filter((p) => !p.ok);
+  const merged = mergeSectionResults(parts.filter((p) => p.ok));
+  const normalized = normalizeResult(merged);
+  const hasCode =
+    (normalized.driver_functions || []).length > 0 ||
+    !!(normalized.initialization && normalized.initialization.code);
+  const hasContent =
+    !!normalized.working_principle ||
+    (normalized.pins || []).length > 0 ||
+    (normalized.registers || []).length > 0 ||
+    !!(normalized.chip_info && normalized.chip_info.model);
+  if (!hasCode || !hasContent || failed.length >= 4) {
+    const err = new Error(`分段分析未完成（失败 ${failed.length}/${parts.length} 段）`);
+    err.sectionResults = parts;
+    throw err;
+  }
+
+  return {
+    content: JSON.stringify(merged),
+    provider: 'makers',
+    model,
+    usage: sumUsage(usages),
+    officialUsage: null,
+    attempts: [{ provider: 'makers', ok: true, ms: Date.now() - started }],
+    chunked: true,
+    sections: parts.map((p) => ({
+      section: p.section,
+      label: p.label,
+      ok: p.ok,
+      ms: p.ms,
+      error: p.error || undefined,
+    })),
+    sections_failed: failed.map((p) => p.section),
+  };
+}
+
+async function analyzeWithBuiltInFirst(cfg, text, mcu, language, request, onEvent) {
+  if (shouldUseChunked(cfg, text)) {
+    try {
+      return await runChunkedAnalysis(cfg, text, mcu, language, request, onEvent);
+    } catch (e) {
+      const fallback = onEvent
+        ? await streamChatWithFallback(cfg, buildMessages(text, mcu, language), request, onEvent)
+        : await chatWithFallback(cfg, buildMessages(text, mcu, language), request, {
+            timeoutMs: 240000,
+          });
+      fallback.chunked_failed = String((e && e.message) || e).slice(0, 300);
+      return fallback;
+    }
+  }
+  if (onEvent) {
+    return streamChatWithFallback(cfg, buildMessages(text, mcu, language), request, onEvent);
+  }
+  return chatWithFallback(cfg, buildMessages(text, mcu, language), request, {
+    timeoutMs: 240000,
+  });
+}
+
+function firstMeta(first, truncated) {
+  return {
+    truncated,
+    chunked: first.chunked || undefined,
+    chunked_failed: first.chunked_failed || undefined,
+    sections: first.sections || undefined,
+    sections_failed: first.sections_failed || undefined,
+  };
 }
 
 async function finalizeSuccess(cfg, first, started, request, cacheKey, ipHash, extraMeta) {
@@ -177,7 +332,6 @@ export async function onRequest(context) {
   const gated = await gate(context, { ...body, text: finalText });
   if (gated.errorResponse) return gated.errorResponse;
   const { cfg, cacheKey, cached, ipHash } = gated;
-  const messages = buildMessages(finalText, mcu, language);
 
   // ---- streaming mode (SSE) ----
   if (body.stream) {
@@ -208,7 +362,7 @@ export async function onRequest(context) {
         }
         const started = Date.now();
         try {
-          const first = await streamChatWithFallback(cfg, messages, context.request, (evt) => {
+          const first = await analyzeWithBuiltInFirst(cfg, finalText, mcu, language, context.request, (evt) => {
             if (evt.type === 'provider') {
               send({ type: 'provider', provider: evt.provider, model: evt.model });
             } else if (evt.type === 'delta') {
@@ -217,7 +371,7 @@ export async function onRequest(context) {
               send({ type: 'heartbeat' });
             }
           });
-          const { result, meta } = await finalizeSuccess(cfg, first, started, context.request, cacheKey, ipHash, { truncated });
+          const { result, meta } = await finalizeSuccess(cfg, first, started, context.request, cacheKey, ipHash, firstMeta(first, truncated));
           send({ type: 'done', result, meta });
         } catch (err) {
           await recordFailure(err, started);
@@ -252,8 +406,8 @@ export async function onRequest(context) {
   }
   const started = Date.now();
   try {
-    const first = await chatWithFallback(cfg, messages, context.request, { timeoutMs: 240000 });
-    const { result, meta } = await finalizeSuccess(cfg, first, started, context.request, cacheKey, ipHash, { truncated });
+    const first = await analyzeWithBuiltInFirst(cfg, finalText, mcu, language, context.request, null);
+    const { result, meta } = await finalizeSuccess(cfg, first, started, context.request, cacheKey, ipHash, firstMeta(first, truncated));
     return jsonResponse({ success: true, result, meta });
   } catch (err) {
     await recordFailure(err, started);

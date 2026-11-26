@@ -89,7 +89,7 @@ function buildRequest(id, providerCfg, messages, request, opts) {
     model,
     messages,
     temperature: 0.2,
-    max_tokens: 8192,
+    max_tokens: (opts && opts.maxTokens) || 8192,
     ...preset.extraBody,
   };
   if (wantJson) body.response_format = { type: 'json_object' };

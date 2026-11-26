@@ -443,6 +443,7 @@ parts.push('命中缓存（7 天内相同手册与配置），即时返回，未
 } else if (meta && meta.provider) {
 parts.push('由 ' + (PROVIDER_NAMES[meta.provider] || meta.provider) + ' · ' + (meta.model || '') + ' 生成');
 }
+if (meta && meta.chunked) parts.push('内置模型分段并行生成');
 if (meta && meta.ms) parts.push('耗时 ' + (meta.ms / 1000).toFixed(1) + ' 秒');
 if (meta && meta.excerpted) {
 parts.push('长手册智能取段：共 ' + meta.totalPages + ' 页，选用了 ' + meta.includedPages + ' 页关键页');
@@ -465,6 +466,18 @@ var note = document.createElement('div');
 note.className = 'result-meta-note';
 note.textContent = '兜底记录：' + failed;
 resultMeta.appendChild(note);
+}
+if (meta && meta.sections_failed && meta.sections_failed.length) {
+var sectionNote = document.createElement('div');
+sectionNote.className = 'result-meta-note';
+sectionNote.textContent = '分段提示：有 ' + meta.sections_failed.length + ' 个小节未完成，已用其余小节拼装结果；缺失部分可重试补齐。';
+resultMeta.appendChild(sectionNote);
+}
+if (meta && meta.chunked_failed) {
+var chunkNote = document.createElement('div');
+chunkNote.className = 'result-meta-note';
+chunkNote.textContent = '分段快速通道未完成，已自动转整段生成：' + meta.chunked_failed;
+resultMeta.appendChild(chunkNote);
 }
 }
 
