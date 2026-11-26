@@ -25,6 +25,7 @@ function publicConfig(cfg) {
       model: p.model || PROVIDERS[id].defaultModel,
       base_url: PROVIDERS[id].baseUrl,
       key_hint: PROVIDERS[id].keyHint,
+      models: PROVIDERS[id].models || null,
     };
   }
   return {

@@ -94,7 +94,7 @@ body {
   color: var(--green);
   margin-bottom: 6px;
 }
-.section-header { margin-bottom: 18px; }
+.section-header { margin-bottom: 18px; overflow: hidden; }
 .section-header h2 { font-size: 22px; margin-bottom: 6px; letter-spacing: 0.5px; }
 .section-header p { color: var(--text-dim); font-size: 14px; }
 .section-header .btn { float: right; }
@@ -470,6 +470,16 @@ body {
 .event-item .event-fail { color: var(--red); }
 .health-line { font-size: 13px; color: var(--text-dim); margin-bottom: 14px; font-family: var(--mono); }
 .health-line .ok { color: var(--green); }
+.rates-box {
+  white-space: pre-line;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.rates-box:empty { margin-top: 0; }
 
 /* modal and toast */
 .modal-overlay {
@@ -717,6 +727,10 @@ body {
   .code-window code { font-size: 12.5px; }
   .stream-preview { -webkit-overflow-scrolling: touch; }
   .provider-actions { flex-wrap: wrap; }
+  .test-status { overflow-wrap: anywhere; }
+  .form-group input:disabled { font-size: 12.5px; }
+  .event-item { overflow-wrap: anywhere; }
+  .save-status { margin-left: 0; display: inline-block; margin-top: 6px; }
   .toast {
     max-width: 92vw;
     text-align: center;

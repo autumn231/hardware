@@ -12,6 +12,21 @@ export const PROVIDERS = {
     // The Makers gateway implements no GET /models (404 Invalid request
     // path), so the connectivity probe must use a minimal chat call.
     probeViaChat: true,
+    // Built-in model catalogue (official Makers list, 2026-11-26). The
+    // admin UI renders this as a dropdown; `rate` is filled in from the
+    // /api/admin/model-rates measurement (gateway-reported official quota
+    // deduction divided by actual tokens), never guessed.
+    models: [
+      { id: '@makers/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+      { id: '@makers/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+      { id: '@makers/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash' },
+      { id: '@makers/kimi-k2.6', label: 'Kimi K2.6' },
+      { id: '@makers/minimax-m3', label: 'MiniMax M3' },
+      { id: '@makers/minimax-m2.7', label: 'MiniMax M2.7' },
+      { id: '@makers/hy3', label: '混元 Hy3' },
+      { id: '@makers/hy3-preview', label: '混元 Hy3 Preview' },
+      { id: '@makers/zhuque-text', label: '朱雀文本检测' },
+    ],
     extraBody: {},
     keyHint: '在 EdgeOne 控制台 Makers → Models → API Key 创建的密钥',
   },
@@ -298,4 +313,77 @@ export async function probeProvider(id, providerCfg) {
           : `网络连不上：${(e && e.message) || e}`,
     };
   }
+}
+
+// Fire one tiny chat request per catalogued model, in parallel, and
+// compare the gateway-reported official quota deduction
+// (makers_models_usage) with the actual token usage. The ratio is the
+// effective per-model multiplier the admin dropdown annotates.
+export async function measureModelRates(id, providerCfg) {
+  const preset = PROVIDERS[id];
+  if (!preset) return { error: `未知供应商 ${id}` };
+  if (!Array.isArray(preset.models) || !preset.models.length) {
+    return { error: '该供应商没有可测量的模型清单' };
+  }
+  if (!providerCfg || !providerCfg.key) return { error: '未配置 API Key' };
+  const baseUrl = providerBaseUrl(id, providerCfg);
+  const results = await Promise.all(
+    preset.models.map(async (m) => {
+      try {
+        const res = await fetchWithTimeout(
+          `${baseUrl}/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${providerCfg.key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: m.id,
+              messages: [{ role: 'user', content: '请用一句话介绍你自己，不超过三十个字。' }],
+              max_tokens: 48,
+              stream: false,
+            }),
+          },
+          30000
+        );
+        if (!res.ok) {
+          const errText = await res.text();
+          return { id: m.id, ok: false, error: `返回 ${res.status}：${errText.slice(0, 160)}` };
+        }
+        const data = await res.json();
+        const usage = data.usage || {};
+        const total =
+          usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+        const official =
+          typeof data.makers_models_usage === 'number' ? data.makers_models_usage : null;
+        if (!total || official === null) {
+          return {
+            id: m.id,
+            ok: false,
+            error: '接口未返回用量回执',
+            total_tokens: total || 0,
+            official_tokens: official,
+          };
+        }
+        return {
+          id: m.id,
+          ok: true,
+          total_tokens: total,
+          official_tokens: official,
+          rate: Math.round((official / total) * 100) / 100,
+        };
+      } catch (e) {
+        return {
+          id: m.id,
+          ok: false,
+          error:
+            e && e.name === 'AbortError'
+              ? '连接超时（30 秒）'
+              : `网络连不上：${(e && e.message) || e}`,
+        };
+      }
+    })
+  );
+  return { results };
 }
